@@ -150,11 +150,19 @@ Protocol  -- problems() must be [] -- (a list, not a raise: every gap at once)
    |
    v
 _prove -> selfcheck.self_check():
-   mirror tree -> delete the generated sources (force the replay to MAKE them)
+   mirror tree -> delete the generated sources AND THE PRODUCTS
+      (force the replay to MAKE them, not find them)
    -> flat_cmake -> cmake+ninja -> compare per product
       |- differs -> ExtractionError: REFUSE to hand over the protocol
       `- equal   -> return
 ```
+
+The products are deleted for the same reason as the generated sources: a
+build that leaves them beside its sources leaves them in the mirror too, so a
+product whose command the replay never ran would still be *found* — in the
+copy of the file it is compared against — and reported EQUAL while nothing
+built it. Only spellings inside the replay's own tree are removed; an
+absolute one names the capture tree, which the replay reads.
 
 ### §A comparison — the criteria
 
