@@ -26,7 +26,17 @@
       "    'produces' a directory.",
       "  * ABSOLUTE -- the replay only READS it (the project's own sources).",
       "    It does not move and must not be rewritten.",
-      "`$` is reserved: a literal dollar is `$$`; a bare `$` is refused."
+      "`$` is reserved: a literal dollar is `$$`; a bare `$` is refused.",
+      "",
+      "A STEM MAY APPEAR TWICE, WHEN THE LANGUAGES DIFFER. A Fortran module and",
+      "the C it binds (`x.F90` + `x.c`) are two translation units with one stem;",
+      "a product's member (a stem) then resolves to BOTH objects. Two entries with",
+      "the same stem AND the same language is the error, not this.",
+      "The `directory` and `command` are the TOOLCHAIN's own -- nothing here is",
+      "CMake-specific. A make build records e.g. directory `${TREE}/source/mis`,",
+      "command `gfortran -g -std=legacy -c -o alg13.o alg13.f`. A make build whose",
+      "tree is IN SOURCE still spells its directory under `${TREE}`, so a replay",
+      "runs there rather than in the project it is proving."
     ],
     "directory": "${TREE}/build",
     "_directory": "The directory the command ran in. The command is replayed THERE, and any relative operand in it is relative to this.",
@@ -42,7 +52,9 @@
     "_language": "The source's language, free-form ('c', 'cpp', 'fortran', ...). What a consumer needs to know to build the unit; NOT an identity.",
     "provides": [],
     "_provides": "Modules this unit DEFINES, as the SOURCE spells them (case kept). Omitted when empty.",
-    "uses": ["m_alpha"],
+    "uses": [
+      "m_alpha"
+    ],
     "_uses": "Modules this unit USES, as spelled. Omitted when empty. Matching is case-insensitive where a consumer builds the graph.",
     "preprocess": "",
     "_preprocess": "The PREPROCESS command, when the build compiles the unit in TWO steps. A replay runs this first, then `command` (which consumes the intermediate this makes). Omitted when the build has no separate step."
@@ -74,63 +86,90 @@
       "layout": "out_of_source"
     },
     "_capture": "'tree' is what ${TREE} means (the BUILD tree the replay recreates); 'layout' is 'in_source' or 'out_of_source'. Recorded, never re-derived -- a wrong guess re-roots every generated source.",
-
     "products": [
       {
         "output": "${TREE}/bin/xlintstc",
         "kind": "exe",
         "_kind": "'exe' | 'archive'. An 'archive' is a static library; set 'shared' for a .so/.dylib.",
         "shared": false,
-        "objects": ["SRC/a", "SRC/b"],
+        "objects": [
+          "SRC/a",
+          "SRC/b"
+        ],
         "_objects": "For an 'exe': the STEMS of its own translation units.",
         "members": [],
         "_members": "For an 'archive': the STEMS that go into it.",
-        "libs": ["${TREE}/lib/libx.a"],
+        "libs": [
+          "${TREE}/lib/libx.a"
+        ],
         "_libs": "Libraries it links, in ORDER (ld resolves left to right). A library this protocol ALSO produces is linked by its output path; a foreign one keeps its path.",
         "driver": "gcc",
         "command": "/usr/bin/gcc CMakeFiles/x.dir/a.c.o ... -o ${TREE}/bin/xlintstc",
         "_command": "The EXACT link/archive command, replayed verbatim in `directory`. Nothing about the link line is re-derived (see the design rule).",
         "directory": "${TREE}/build",
         "_directory": "The directory the link ran in; its relative operands are relative to this.",
-        "flags": []
+        "flags": [],
+        "_shared": "true when an 'archive' is a SHARED library (.so/.dylib). Load-bearing: linking a shared library leaves its symbols UNDEFINED in the consumer, linking a static one pulls them IN, so replaying a shared library as static changes every consumer's defined symbols."
       }
     ],
     "_products": "What the build LINKS. A replay runs each product's `command`; `objects`/`members`/`libs` say what it DEPENDS on, so the objects are built first.",
-
     "generated_inputs": [
       {
         "output": "${TREE}/BLAS/SRC/a_64.c",
         "command": "cd ${TREE}/BLAS/SRC && cmake -DINPUT=... -P gen.cmake",
         "_command": "A SHELL LINE, replayed verbatim. It makes `output`.",
-        "depends": ["/abs/gen.cmake"]
+        "depends": [
+          "/abs/gen.cmake"
+        ]
       }
     ],
     "_generated_inputs": "Sources the build MAKES. A replay must reproduce them or it compiles a file that does not exist. Empty [] when the build generates nothing.",
-
     "own_roots": [],
     "_own_roots": "The tree-relative directories that are the project's OWN units, when its build pulls in third-party subprojects. Empty [] means every compiled unit is the project's.",
-
     "tests": [
       {
         "name": "runs",
-        "command": ["${TREE}/bin/xlintstc"],
+        "command": [
+          "${TREE}/bin/xlintstc"
+        ],
         "working_directory": "${TREE}/build",
         "depends": []
       }
     ],
     "_tests": "The build system's OWN test registrations, as it reports them (ctest --show-only=json-v1). A replay re-registers them so the built tree is RUNNABLE the way the project runs it. Empty [] when none.",
-
     "support_files": [
-      {"path": "TESTING/x.in", "content": "..."}
+      {
+        "path": "TESTING/x.in",
+        "content": "..."
+      }
     ],
     "_support_files": "Files a run READS that are neither compiled nor generated, carried as CONTENT. Empty [] when none.",
-
     "prepare": [
-      {"op": "submodule", "check": {"path": "submodules/lib"},
-       "run": "git submodule update --init submodules/lib"}
+      {
+        "op": "submodule",
+        "check": {
+          "path": "submodules/lib"
+        },
+        "run": "git submodule update --init submodules/lib"
+      },
+      {
+        "_README": [
+          "A PATCH op: a change the source needs to build on THIS platform/",
+          "toolchain, written so a fresh checkout reproduces it and a repeat pays",
+          "nothing. `check` is a SHELL line that exits 0 when the fix is ALREADY",
+          "there; `run` applies it. MEASURED on a real project: its Makefile",
+          "spelled target paths with backslashes (Windows) and its 1970s Fortran",
+          "used a dialect today's gfortran rejects -- both are prepare ops, so the",
+          "recorded protocol rebuilds from a clean checkout."
+        ],
+        "op": "patch",
+        "check": {
+          "shell": "grep -q -- -fallow-argument-mismatch Makefile"
+        },
+        "run": "sed -i 's|^FFLAGS|FFLAGS += -fallow-argument-mismatch\\nFFLAGS|' Makefile"
+      }
     ],
-    "_prepare": "Infrastructure the project needs ONCE (a submodule fetch, a patch, an overlay). Each carries a `check` so it runs AT MOST ONCE. Empty [] when none.",
-
+    "_prepare": "Infrastructure the project needs ONCE (a submodule fetch, a patch, an overlay). Each carries a `check` so it runs AT MOST ONCE. Empty [] when none. Each op is IDEMPOTENT: it carries a `check` (a shell line, or a `{path, exists}` predicate) that exits 0 when it is already done. Ops that patch the source are how a project that needs a platform/toolchain fix stays reproducible.",
     "build": {},
     "_build": "Toolchain-specific extras a CONSUMER may read (an optimization remap, module/include directories, policy flags). All OPTIONAL; {} for a project that declares none. NOTHING in this tool branches on them."
   }
