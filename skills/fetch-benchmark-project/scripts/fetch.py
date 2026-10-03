@@ -397,14 +397,23 @@ def main(argv=None) -> int:
             return 1
         print(f're-proving #{number:03d} {dest.name}')
         # A renumber (or a tool change) invalidates the previous build: its
-        # recorded paths name the OLD directory, so build afresh.  ONLY a
-        # generated CMake build directory is removed — an IN-SOURCE build's
-        # tree holds the project's own sources (`source/mis`, `source/mds`),
-        # and deleting it would delete the project.
+        # recorded paths name the OLD directory, so build afresh.
+        #
+        # ONLY a generated build directory OUTSIDE the project is removed.  An
+        # IN-SOURCE build's tree IS the source tree — `--tree-subdir .` names
+        # the checkout — and removing it deletes the project.  The guard used
+        # to be "does it contain a CMakeCache.txt", which an in-source build
+        # has too, so the deletion fired on exactly the case the comment above
+        # claims to protect.
         bd = src / args.tree_subdir
-        if (bd / 'CMakeCache.txt').is_file() or (bd / 'build.ninja').is_file() \
-                or (bd / 'CMakeFiles').is_dir():
+        generated = ((bd / 'CMakeCache.txt').is_file()
+                     or (bd / 'build.ninja').is_file()
+                     or (bd / 'CMakeFiles').is_dir())
+        if generated and bd != src:
             shutil.rmtree(bd, ignore_errors=True)
+        elif generated:
+            print(f'  in-source build tree — keeping {bd} (removing it would '
+                  f'delete the project)', file=sys.stderr)
         ok, log, remedies = native(src, args)
         if not ok:
             # NOT recorded.  A re-prove's failure is "could not re-prove", not
