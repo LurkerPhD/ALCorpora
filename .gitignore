@@ -21,3 +21,4 @@ benchmark/*/verification_plan.json
 benchmark/*/origin_release/
 benchmark/*/.work/
 benchmark/*/results/
+benchmark/*/benchmark_results/
