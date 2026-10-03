@@ -289,6 +289,16 @@ def check_self_reports(plan, suite_stdout: str) -> list[str]:
         if a.get('section_pattern'):
             got = read_table(suite_stdout, a['section_pattern'],
                              a.get('total_label', ''))
+            if not got:
+                # The floors below live INSIDE the per-section loop, so an
+                # empty table skips them entirely and the assertion reports
+                # nothing — the vacuous pass this function's docstring says
+                # must not happen ("a report that could not be read must fail
+                # rather than pass vacuously").  The `reader` branch below has
+                # always had this guard; only this one lacked it.
+                problems.append(
+                    f'assertions[{i}] the suite report matched nothing: a '
+                    f'verdict with no checks behind it is not a pass')
             for section, counts in got.items():
                 for key, floor in (a.get('require_min') or {}).items():
                     if counts.get(key, 0) < floor:
