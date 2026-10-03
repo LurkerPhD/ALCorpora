@@ -1,0 +1,12 @@
+number,name,language,build_system,verification,native,build_protocol_a,verify_on_project_b,verify_on_replay_b,status,notes
+001,minFortran,Fortran,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,self-built minimal fixture
+002,minCpp,C++,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,self-built minimal fixture
+003,cJSON,C,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,fetched from github
+004,tinyxml2,C++,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,admitted by fetch skill
+005,stdlib,Fortran,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,fortran-lang/stdlib; mixed Fortran/C modules
+006,NASTRAN-95,Fortran,make,verification-cases,no,no,no,no,FAIL_NATIVE,Odonata fork; modern gfortran rejects legacy code; cases present but no runner
+007,jansson,C,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,fetched from github
+008,zlib,C,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,fetched from github
+009,goldenDemo,C++,CMake+Ninja,golden,yes,yes,yes,yes,PASS,one_per_dir + reference_run + text_lockstep
+010,goldenChain,C++,CMake+Ninja,golden+chains,yes,yes,yes,yes,PASS,multi-golden + restart chains (order + carry)
+011,goldenField,C++,CMake+Ninja,golden+fields,yes,yes,yes,yes,PASS,input + declared field_model column comparison

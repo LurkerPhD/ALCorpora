@@ -3,4 +3,21 @@ __pycache__/
 .pytest_cache/
 build/
 *.egg-info/
-benchmark/
+
+# benchmark/ is the corpus this tool is developed against. The REAL projects
+# (006+) are whole third-party checkouts and are NOT tracked; the five minimal
+# SAMPLES are the reference shapes and ARE tracked -- as SOURCE only.
+benchmark/*
+!benchmark/benchmark.csv
+!benchmark/001-minFortran/
+!benchmark/002-minCpp/
+!benchmark/003-goldenDemo/
+!benchmark/004-goldenChain/
+!benchmark/005-goldenField/
+
+# Generated protocols are OUTPUT, not source -- never tracked.
+benchmark/*/protocol.json
+benchmark/*/verification_plan.json
+benchmark/*/origin_release/
+benchmark/*/.work/
+benchmark/*/results/

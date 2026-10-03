@@ -1,0 +1,11 @@
+{
+  "artifact": {"suffix": ".out", "golden_root": "case_id", "golden_suffix": ".out"},
+  "field_model": {
+    "near_zero": 0.000001,
+    "tables": [
+      {"titles": ["QUANTITIES"],
+       "rows": [{"match": {"first_int": true, "n_tokens": 4},
+                 "fields": {"indices": [1, 2]}}]}
+    ]
+  }
+}

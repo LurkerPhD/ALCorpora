@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(cppdemo LANGUAGES CXX)
+add_library(util STATIC src/util.cpp)
+target_include_directories(util PUBLIC src)
+add_executable(cppdemo src/main.cpp)
+target_link_libraries(cppdemo PRIVATE util)
+enable_testing()
+add_test(NAME runs COMMAND cppdemo)

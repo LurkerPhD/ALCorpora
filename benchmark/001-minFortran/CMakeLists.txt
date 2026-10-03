@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(demo LANGUAGES Fortran)
+add_library(alpha STATIC "source/m_mod.f90" "source/user.f90")
+add_executable(demo "source/main.f90")
+target_link_libraries(demo PRIVATE alpha)
+enable_testing()
+add_test(NAME runs COMMAND demo)

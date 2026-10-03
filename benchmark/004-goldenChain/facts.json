@@ -1,0 +1,9 @@
+{
+  "artifact": {"suffix": ".out", "state_suffix": ".st",
+               "golden_root": "case_id", "golden_suffix": ".out"},
+  "chains": {
+    "order": {"c2": ["c1"], "c3": ["c1", "c2"]},
+    "carry": {"as": "state"},
+    "_comment": "c2 restarts from c1's total; c3 from c2's. One shared dir, state handed forward under the NEXT case's name."
+  }
+}
