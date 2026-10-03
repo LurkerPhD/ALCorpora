@@ -67,20 +67,29 @@
   "_plan_version": "The only version this consumer reads. A file from another version is refused, not coerced.",
   "target": {
     "_README": [
-      "WHAT is under test. Exactly two shapes, and which one applies is a fact",
-      "about the project, not a preference:",
-      "  * `product` -- a program the build produces. `product` names it, and",
-      "    the harness finds it under `<tree>/curr/bin/<product>` (or wherever",
-      "    the caller passes with `-x`).",
-      "  * `tree` -- a BUILD TREE, for a project whose acceptance is its own",
-      "    registered test suite (a library). Its registrations live where the",
-      "    build ran; the mechanism reads that directory rather than assuming.",
-      "A wrong `kind` here is not a small error: the harness used to hand every",
-      "project `<tree>/bin/<binary>`, which for a library names a path that",
-      "does not exist."
+      "WHAT is under test, and WHERE it is. Two shapes, told apart by what the",
+      "project HAS:",
+      "  * `product` -- one program the build produces; `product` names it and",
+      "    `dirs` lists the candidate directories it may be in, as BINDINGS.",
+      "  * `tree`    -- a BUILT TREE whose acceptance is its own registered suite",
+      "    (a library); its registrations live where the build ran.",
+      "`dirs` is a LIST because the SAME plan runs against two builds that put",
+      "their artifacts in different places: the project's own build, and the",
+      "protocol-driven replay (see §B). The mechanism resolves by NAME — the one",
+      "candidate that holds it — and REFUSES when several do, rather than picking",
+      "silently. The first candidate is also where a product is looked for when",
+      "none matched, so the failure says where it looked.",
+      "The RUN's tree (what `${TREE}` means) is given per run as `--tree`, not",
+      "baked here: the plan is written once and run against a build somewhere."
     ],
     "kind": "product",
-    "product": "demo"
+    "product": "demo",
+    "_product": "For `kind: product`: the name of the protocol product under test.",
+    "dirs": [
+      "{tree}/bin",
+      "{tree}/curr/bin"
+    ],
+    "_dirs": "Candidate directories (BINDINGS), in search order, for `kind: product`. Omitted -> the conventional `{tree}/bin`, `{tree}/curr/bin`."
   },
   "cases": {
     "_README": [
@@ -526,5 +535,7 @@
         "otherr"
       ]
     }
-  }
+  },
+  "_protocol": "The build protocol this plan belongs to, as a name relative to the plan (or a binding). Declared, not assumed: a plan found by guessing a file name is coupled to that name. The CLI's --protocol overrides it.",
+  "protocol": "protocol.json"
 }
