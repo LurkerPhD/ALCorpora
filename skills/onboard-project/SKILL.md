@@ -314,6 +314,21 @@ resolved by picking one: picking silently verifies a corpus against another
 project's cases, and the result reads as a wrong answer instead of a wrong
 choice.
 
+**Name the checkout after the PROJECT, not after the repository.**  The
+sibling rule is a name PREFIX, so a project whose repository is called
+`MYSTRANSolver` but whose validation suite is `MYSTRAN_Validation` only finds
+it when the checkout is placed at `MYSTRAN/` — `MYSTRAN_Validation` does not
+begin with `MYSTRANSolver`, and the suite is then invisible.  The same project
+fetched with `--name MYSTRAN` lands at `MYSTRAN/MYSTRAN/` and works.  When the
+two repositories are fetched separately, place them as SIBLINGS under one
+benchmark folder:
+
+```
+benchmark/012-MYSTRAN/
+   MYSTRAN/              <- the checkout, named after the project
+   MYSTRAN_Validation/   <- its suite, a sibling
+```
+
 **Completeness is not optional, and `problems()` is the authority.**  A plan
 is refused when it could produce a verdict with nothing behind it:
 
