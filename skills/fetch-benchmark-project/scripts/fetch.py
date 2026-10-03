@@ -36,25 +36,54 @@ BENCH = REPO / 'benchmark'
 
 
 def next_number(bench: Path) -> int:
-    """The next admission number: one past the highest already present."""
-    n = 0
+    """The SMALLEST number not already taken.
+
+    Admission order, not density: the first free number is the next one, so a
+    project that failed to admit leaves its number to be reused rather than
+    leaving a hole that the next project skips over.
+    """
+    used: set[int] = set()
     for d in bench.glob('[0-9][0-9][0-9]-*'):
         try:
-            n = max(n, int(d.name[:3]))
+            used.add(int(d.name[:3]))
         except ValueError:
             continue
-    return n + 1
+    n = 1
+    while n in used:
+        n += 1
+    return n
 
 
-def fetch(source: str, dest: Path) -> None:
-    """Put the source at *dest*: clone a URL, copy a local path."""
+class FetchError(RuntimeError):
+    """The source could not be fetched."""
+
+
+def fetch(source: str, dest: Path, *, retries: int = 3) -> None:
+    """Put the source at *dest*: clone a URL, copy a local path.
+
+    A shallow clone over a flaky link fails intermittently (`GnuTLS recv
+    error: The TLS connection was non-properly terminated`), so a URL is
+    retried before giving up — and giving up RAISES with the reason rather
+    than crashing with a traceback.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     if source.startswith(('http://', 'https://', 'git@')) or \
             source.endswith('.git'):
-        subprocess.run(['git', 'clone', '--depth', '1', source, str(dest)],
-                       check=True)
-    else:
-        shutil.copytree(source, dest, symlinks=True)
+        last = ''
+        for attempt in range(1, retries + 1):
+            if dest.exists():
+                shutil.rmtree(dest, ignore_errors=True)
+            r = subprocess.run(
+                ['git', 'clone', '--depth', '1', source, str(dest)],
+                capture_output=True, text=True)
+            if r.returncode == 0:
+                return
+            last = (r.stderr or r.stdout).strip()
+            tail = last.splitlines()[-1] if last else '?'
+            print(f'  clone attempt {attempt}/{retries} failed: {tail}',
+                  file=sys.stderr)
+        raise FetchError(f'could not clone {source}: {last}')
+    shutil.copytree(source, dest, symlinks=True)
 
 
 def run(argv: list[str], cwd: Path) -> tuple[bool, str]:
@@ -104,7 +133,11 @@ def main(argv=None) -> int:
     if dest.exists():
         print(f'REFUSED: {dest} already exists', file=sys.stderr)
         return 1
-    fetch(args.source, dest / src_name)
+    try:
+        fetch(args.source, dest / src_name)
+    except FetchError as exc:
+        print(f'REFUSED: {exc}', file=sys.stderr)
+        return 1
     src = dest / src_name
     ok, log = native(src, args)
     if not ok:

@@ -42,7 +42,8 @@ authority, and inventing one is the thing this tool exists to avoid.
 ## Procedure
 
 ```
-# 1. number it: the next three-digit number by order of admission
+# 1. number it: the SMALLEST free three-digit number (a failed admission
+#    leaves its number to be reused, not a hole)
 # 2. fetch the SOURCE into benchmark/<NNN>-<name>/<name>/  (a real checkout)
 # 3. build + verify NATIVELY, with the project's own toolchain
 #    (CMake+Ninja, or the project's own as the skill researches it)
@@ -77,8 +78,10 @@ benchmark/
 
 * `benchmark/` is **gitignored** — it holds whole third-party checkouts, and
   the admission order is local state, not a fact about this tool.
-* the number is the ADMISSION ORDER, three digits, and it never changes: the
-  projects are read in the order the failures were found.
+* the number is the ADMISSION ORDER, three digits, and it never changes once
+  a project is admitted: the projects are read in the order the failures were
+  found. The NEXT project takes the smallest free number, so a failed
+  admission does not leave a gap.
 * a protocol records paths OUTSIDE the tree (the project's own sources) as
   ABSOLUTE, by design — so a project admitted here stays put. Moving its
   directory invalidates its recorded protocols; re-run the skill instead.

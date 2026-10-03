@@ -236,37 +236,31 @@ reference output has an external truth: say so in `provenance`.
 ## Replay: protocol -> flat build
 
 ```
-Protocol + state (optional; no state = every unit keeps the form it records)
+Protocol
    |
-   v  reconcile_state  <- the closure rule
-   |     a converted provider cannot be `use`d by a unit still Fortran
-   |     (unreachable entries are demoted back, with a warning, not refused)
-   v  select
-   |     one form per stem; a form the protocol lacks -> recorded as missing
-   |     -> ProtocolError (fail loudly rather than produce a build that only
-   |        LOOKS like it matches the state)
-   v  _render
-   |     project(<neutral name> LANGUAGES ...)
-   |     module dir + preprocess settings BEFORE the first target
-   |     add_custom_command(OUTPUT ...)              <- generated sources
-   |     set_source_files_properties(COMPILE_OPTIONS ...)  <- flags recovered
-   |                                                          from the command
-   |     add_library / add_executable (members = stems' sources)
-   |     target_link_libraries (a library this build makes -> by target name;
-   |                            an external library -> by path)
-   |     caller-declared extra includes / link extras
-   |     file(WRITE) support_files + enable_testing + add_test
+   v  the generated CMakeLists.txt runs the RECORDED commands, verbatim:
+   |     a unit    -> its own `command`, in its own `directory`
+   |                  (a two-step/scanned unit: its preprocess edge, then
+   |                  its compile edge, which consumes the intermediate)
+   |     a product -> the recorded link/archive `command`
+   |     a generated source -> the recorded generator `command`
+   |     the object path is read off the command (`directory` + `-o`)
    v
 CMakeLists.txt -> cmake+ninja -> products -> §A comparison
 ```
 
-The generator emits **intent, not commands**: it says "these sources, these
-flags, this product" and lets CMake assemble the command, so CMake keeps what
-it already does correctly (`.mod` ordering, the two forms not colliding).
-The cost is that a command is *reassembled* rather than copied — which is what
-the protocol's own record of the command is for.
+**Verbatim, not reassembled.** The generator does not say "these sources,
+these flags" and let CMake build a command: it replays the command the build
+recorded. Reassembling drifts, and the drift is silent — measured on a real
+project compiled with `-fvisibility=hidden`, letting CMake rebuild the link
+lines produced `-rdynamic` and a LOCALISED `main` in every executable, so 19
+products "differed" while their code was identical. Replaying the recorded
+command removes the whole class: flags, `-fPIC`, visibility, link order and
+source spelling are the build's own.
 
----
+The generator still decides two things the recorded commands do not: the
+`${TREE}` placeholder is expanded to the replay's tree, and a unit DEPENDS on
+the object of every module it uses, so the compile order is CMake's.
 
 ## Running it
 

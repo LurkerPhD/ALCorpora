@@ -215,34 +215,28 @@ plan 称之为 golden 的东西留下来。reference 与 candidate 因此走同�
 ## 重放:协议 -> flat build
 
 ```
-Protocol + state(可选;无 state = 每个 unit 保持它记录里的 form)
+Protocol
    |
-   v  reconcile_state  <- 闭包规则
-   |     被转换的 provider,不能被仍为 Fortran 的 unit `use`
-   |     (不可达的条目退回,并 warn,而不是拒绝)
-   v  select
-   |     每个 stem 选一个 form;协议里没有的 form -> 记成 missing
-   |     -> ProtocolError(宁可响亮地失败,也不产出一个只是**看起来**符合 state
-   |        的 build)
-   v  _render
-   |     project(<中性名> LANGUAGES ...)
-   |     module 目录与 preprocess 设置必须在第一个 target **之前**
-   |     add_custom_command(OUTPUT ...)              <- 生成的源
-   |     set_source_files_properties(COMPILE_OPTIONS ...)  <- 从命令反推的 flags
-   |     add_library / add_executable(成员 = stem 的源)
-   |     target_link_libraries(本 build 产的库 -> 用 target 名;
-   |                            外部库 -> 用路径)
-   |     调用方声明的 extra includes / 链接附加项
-   |     file(WRITE) support_files + enable_testing + add_test
+   v  生成的 CMakeLists.txt 逐字跑「记录下来的命令」:
+   |     单元    -> 它自己的 `command`,在它自己的 `directory` 里
+   |                (两步/扫描型单元:先 preprocess 边,再 compile 边,
+   |                 后者消费前者的中间产物)
+   |     产物    -> 记录下来的 link/archive `command`
+   |     生成源  -> 记录下来的 generator `command`
+   |     目标文件路径从命令里读出(`directory` + `-o`)
    v
 CMakeLists.txt -> cmake+ninja -> 产物 -> §A 比对
 ```
 
-生成器输出的是**意图,不是命令**:它说「这些源、这些 flags、这个产物」,让 CMake
-去组装命令,这样 CMake 已经做对的事情(模块排序、两种 form 不互相碰撞)就保住了。
-代价是一条命令是被*重新组装*而不是被照抄的——这正是协议自己记录那条命令的用处。
+**逐字重放,不重新组装。** 生成器不说「这些源、这些 flags」让 CMake 组装命令,
+而是重放构建记录下来的那条命令。重新组装会漂移,而且是静默地漂:实测在一个用
+`-fvisibility=hidden` 编译的真实项目上,让 CMake 重建链接行产出了 `-rdynamic`、
+并让每个可执行文件的 `main` 被**本地化**,于是 19 个产物「不一致」而它们的代码其实
+完全相同。重放记录命令消除了整类问题:flags、`-fPIC`、可见性、链接顺序、源码拼写,
+都是构建自己的。
 
----
+生成器仍决定两件记录命令不包含的事:展开 `${TREE}` 到重放树;让一个单元 DEPENDS
+在它所用模块的对象上,于是编译顺序交给 CMake。
 
 ## 怎么跑
 
