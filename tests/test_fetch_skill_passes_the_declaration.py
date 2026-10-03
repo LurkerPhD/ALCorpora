@@ -71,6 +71,12 @@ def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
 
     seen: dict = {}
 
+    # `record_row` writes the benchmark's own CSV.  A test that let it would
+    # EDIT the corpus it is testing — measured: the row for 003 was replaced
+    # by this fixture's, and every later read of the benchmark reported a
+    # project that does not exist.
+    csv = tmp_path / 'benchmark.csv'
+
     def fake_capture(proto, build, tree_root, **kw):
         seen.update(kw)
         return dict(_PLAN)
@@ -85,8 +91,9 @@ def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('[]', encoding='utf-8')
 
-    with mock.patch('protocolize.onboard.extract.extract_and_prove',
-                    return_value=(_Proto(), mock.Mock(compared=0))), \
+    with mock.patch.object(fetch, 'BENCH_CSV', csv), \
+            mock.patch('protocolize.onboard.extract.extract_and_prove',
+                       return_value=(_Proto(), mock.Mock(compared=0))), \
             mock.patch('protocolize.onboard.extract.capture_verification',
                        side_effect=fake_capture), \
             mock.patch('protocolize.verify.cli.main', return_value=0):
@@ -100,6 +107,9 @@ def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
     assert seen.get('declaration') == src / 'rules.json', (
         f'the comparison rules never reached the capture: '
         f'{seen.get("declaration")}')
+    assert csv.is_file() and 'thing' in csv.read_text(encoding='utf-8'), (
+        'the run must record its own row — into the CSV `record_row` was '
+        'given, not into the benchmark\'s')
 
 
 def test_a_declaration_is_resolved_against_the_project(tmp_path: Path):

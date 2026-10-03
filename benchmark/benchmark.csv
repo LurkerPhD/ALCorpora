@@ -1,7 +1,7 @@
 number,name,language,build_system,verification,native,build_protocol_a,verify_on_project_b,verify_on_replay_b,status,notes
 001,minFortran,Fortran,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,minimal sample (tracked source)
 002,minCpp,C++,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,minimal sample (tracked source)
-003,thing,?,,,yes,yes,yes,yes,PASS,fetched from source
+003,goldenDemo,C++,CMake+Ninja,golden,yes,yes,yes,yes,PASS,minimal sample golden (tracked source)
 004,goldenChain,C++,CMake+Ninja,golden+chains,yes,yes,yes,yes,PASS,minimal sample golden + chains (tracked source)
 005,goldenField,C++,CMake+Ninja,golden+fields,yes,yes,yes,yes,PASS,minimal sample golden + field_model (tracked source)
 006,cJSON,cpp,,,yes,yes,yes,yes,PASS,fetched from source
