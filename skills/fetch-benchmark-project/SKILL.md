@@ -39,70 +39,73 @@ number is assigned, but no protocol is recorded, and the reason is written
 down. Do not invent a build system for them — a recorded command is the
 authority, and inventing one is the thing this tool exists to avoid.
 
-## Procedure
+## Procedure — one AUTONOMOUS loop
+
+You run this to completion yourself. **Do not stop between iterations to ask
+the user**: a project that fails at a step is the next thing to work, and the
+loop is what "the skill handles it" means.
 
 ```
-# 1. number it: the SMALLEST free three-digit number (a failed admission
-#    leaves its number to be reused, not a hole)
-# 2. fetch the SOURCE into benchmark/<NNN>-<name>/<name>/  (a real checkout)
-# 3. build + verify NATIVELY, with the project's own toolchain
-#    (CMake+Ninja, or the project's own as the skill researches it)
-# 4. run the pipeline: extract_and_prove (§A), capture_verification (§B),
-#    then run the plan against the project and against the replay
-# 5. record the RESULT into benchmark/<NNN>-<name>/:
-#       <name>/                the source, with its build tree
-#       protocol.json          the build protocol  (a compile_commands.json)
-#       verification_plan.json the verification protocol
-#       prepare.sh             the project's one-time ops, when it needs any
+admit a project:
+  repeat until the project is LEGAL, or you are genuinely BLOCKED:
+
+    1. NUMBER it (the smallest free number) and FETCH the source.
+    2. Build + verify NATIVELY, with the project's own toolchain.
+       If it FAILS -> diagnose (below), turn the fix into a `prepare` op
+                     and/or a build flag, and RETRY. Loop here until the
+                     build succeeds or you cannot find a fix.
+    3. §A: extract_and_prove — the protocol must replay the project.
+       If it FAILS -> that is a TOOL gap: record it and work on the tool.
+    4. §B: capture_verification, then run the plan on the project AND on
+       the replay. If the flat verdict differs -> a TOOL gap.
+    5. LEGAL -> record the row in benchmark.csv and move on.
 ```
 
-The mechanical half is `scripts/fetch.py`; call it with the project's own
-build commands. The skill's job is the part that is different per project:
-finding those commands, and reading the failure when one of the four steps
-above does not hold.
+"BLOCKED" means: the failure has no fix you can name AND confirm — a missing
+toolchain that cannot be installed, a resource the repo does not ship. Report
+that in one line. Everything else, fix and continue.
+
+The mechanical half is `scripts/fetch.py`; the loop calls it, reads what it
+says, and decides the next move. The part that is per project — the native
+build commands, and the fix when it fails — is YOURS.
 
 ```bash
-python3 skills/fetch-benchmark-project/scripts/fetch.py \
-    <github url or local path> --name <name>
+python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X
+#   succeeds            -> the project is LEGAL; move on
+#   REFUSED / NOT LEGAL -> read the reason, decide the fix, retry:
+python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+    --build "<the project's build, with any flags you found>" \
+    --prepare fix.json     # ops YOU diagnosed, each {op, check, run}
 ```
 
-## When the native build fails: diagnose it, do not paper over it
+### Diagnosing a native build failure
 
-Steps 1-2 fail on real projects, and the failure is INFORMATION. A project
-written for another platform or an older compiler is a legal project whose
-build needs a fix; finding that fix is YOUR job, not a script's — it differs
-per project, which is exactly what a skill is for. The mechanical half only
-runs what you decided and records it.
+The failure is INFORMATION, and it names its own cause. Read it, decide the
+fix, make the fix reproduce, and retry — do not paper over it.
 
-The loop:
-
-1. **Read the failure.** It names its own cause. Real examples:
-   * `No rule to make target '..\bd\dpdcbd.o'` — the Makefile spells target
-     paths with BACKSLASHES (Windows). Confirm: the slashed form names a real
-     file, the backslashed one does not. The fix is path normalisation.
+1. **Read the failure.** Real examples, and the shape of the fix:
+   * `No rule to make target '..\bd\dpdcbd.o'` — a Makefile spelling target
+     paths with BACKSLASHES (Windows). Confirm: the slashed path names a real
+     file, the backslashed one does not. Fix: normalise the paths.
    * `Error: Type mismatch between actual argument ...` / `BOZ constant ...
      nonstandard postfix syntax` — today's gfortran rejects a Fortran dialect
-     the project was written in. The fix is the compiler flag gfortran
-     documents for that diagnostic (`-fallow-argument-mismatch`,
-     `-fallow-invalid-boz`, `-std=legacy`).
-2. **Decide the fix, and make it idempotent.** Two kinds:
-   * a **patch to the source** (a Makefile path, a build file) → a `prepare`
-     op with a `check` (a shell line that succeeds when the fix is ALREADY
-     there) and a `run` (the shell line that applies it);
-   * a **build flag** → part of the `--build` command line the skill passes.
-3. **Pass it in and re-prove.** `--prepare` takes the ops; the script records
-   them into the protocol (they run at most once) and re-runs the whole
-   proof. If the build still fails, the diagnosis was wrong — say so and stop;
-   never record a fix that did not make the build work.
-4. **Nothing is guessed.** A `check` that cannot be written, or a fix with no
-   observable confirmation, is not a fix — it is a change to the project that
-   the next reader cannot reproduce.
-
-```bash
-python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
-    --build "make -C source/mis FFLAGS='-std=legacy ...' && make -C source/mds all" \
-    --prepare fix.json     # the ops YOU diagnosed, each with check + run
-```
+     the project was written in. Fix: the flag gfortran documents for that
+     diagnostic (`-fallow-argument-mismatch`, `-fallow-invalid-boz`,
+     `-std=legacy`).
+   * a missing tool (`fypp`, a specific compiler) — install it, or record it
+     as a `prepare` op when it is a step the project itself needs.
+2. **Make the fix idempotent, and reproducible.** Two kinds:
+   * a **source patch** (a Makefile, a build file) -> a `prepare` op with
+     `check` (a shell line that exits 0 when the fix is ALREADY there) and
+     `run` (the line that applies it). It is then recorded in the protocol, so
+     a fresh checkout reproduces the build and a repeat pays nothing.
+   * a **build flag** -> part of the `--build` line you pass.
+3. **Confirm by re-running the whole proof.** If the build still fails, the
+   diagnosis was wrong: say so and try the next reading. **Never record a fix
+   that did not make the build work.**
+4. **Nothing is guessed.** A fix you cannot confirm, or a `check` you cannot
+   write, is not a fix — it is a change to the project the next reader cannot
+   reproduce.
 
 ## The layout, and the one rule about it
 

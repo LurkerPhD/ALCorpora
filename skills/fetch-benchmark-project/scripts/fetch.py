@@ -128,6 +128,25 @@ def run(shell_line: str, cwd: Path) -> tuple[bool, str]:
     return r.returncode == 0, (r.stdout or '') + (r.stderr or '')
 
 
+def _prepare_done(op: dict, src: Path) -> bool:
+    """Whether a prepare op is already applied, by its own `check`.
+
+    A `check` is either a shell line (exit 0 = done) or a `{path, exists}`
+    predicate over the tree. An op with no check runs every time — which is
+    why the skill is told to give every op one.
+    """
+    check = op.get('check')
+    if not check:
+        return False
+    if isinstance(check, str):
+        return run(check, cwd=src)[0]
+    if check.get('shell'):
+        return run(check['shell'], cwd=src)[0]
+    p = src / str(check.get('path', ''))
+    exists = p.exists()
+    return exists if check.get('exists', True) else not exists
+
+
 def native(src: Path, args) -> tuple[bool, str, list]:
     """Build and test the project the way IT builds — steps 1 and 2.
 
@@ -140,6 +159,14 @@ def native(src: Path, args) -> tuple[bool, str, list]:
     """
     log = ''
     remedies: list = list(getattr(args, 'prepare_ops', []) or [])
+    # APPLY the declared ops first, so the build runs on the prepared tree.
+    # A fresh checkout reproduces the build because each op carries a check
+    # and a `run`: `run` only fires when `check` says it is not done yet.
+    for op in remedies:
+        if _prepare_done(op, src):
+            continue
+        ok, out = run(op['run'], cwd=src)
+        log += f'$ {op["run"]}\n{out[-1000:]}\n'
     for line in (args.configure, args.build, args.test):
         if not line:
             continue
