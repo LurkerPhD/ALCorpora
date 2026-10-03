@@ -225,7 +225,28 @@ def main(argv=None) -> int:
     # §B on the project's own build.
     from protocolize.verify import cli
     lang = _language(proto)
-    rc = cli.main([str(dest), '--tree', str(src)])
+    origin = dest / 'origin_release'
+    # A plan whose golden comes from a REFERENCE RUN has no golden yet: run
+    # the plan against the project ONCE and keep what it produces. This is the
+    # project's own output, so it is the external truth a later run is judged
+    # against.
+    if plan.golden.source == 'reference_run':
+        from protocolize.verify import reference, suite
+        cfg = {'target_dir': str(dest), 'tree_root': str(src),
+               'protocol': str(dest / 'protocol.json'), '_config_dir': dest}
+        env = reference.plan_env(plan, dest, cfg, origin_dir=origin)
+        env.tree = src.resolve()
+        n = suite.ensure_reference(plan, env)
+        if n == 0:
+            print('NOT LEGAL — §B: the reference run captured no goldens',
+                  file=sys.stderr)
+            record_row(n, src_name, language=lang, native='yes',
+                       build_protocol_a='yes', verify_on_project_b='no',
+                       verify_on_replay_b='no', status='FAIL_B_REF',
+                       notes='reference run captured nothing')
+            return 1
+        print(f'  captured {n} goldens from the reference run')
+    rc = cli.main([str(dest), '--tree', str(src), '--origin', str(origin)])
     if rc != 0:
         print(f'NOT LEGAL — §B failed on the project\'s own build (exit {rc})',
               file=sys.stderr)
@@ -240,7 +261,8 @@ def main(argv=None) -> int:
     flat = work / 'tree'
     proto.save(flat / 'protocol.json')
     shutil.copy2(dest / 'verification_plan.json', flat / 'verification_plan.json')
-    rc = cli.main([str(flat), '--tree', str(flat)])
+    rc = cli.main([str(flat), '--tree', str(flat),
+                  '--origin', str(origin)])
     if rc != 0:
         print(f'NOT LEGAL — §B failed on the REPLAY (exit {rc})', file=sys.stderr)
         record_row(n, src_name, language=lang, native='yes',
