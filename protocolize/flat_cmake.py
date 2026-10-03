@@ -323,52 +323,23 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         lines.append('')
         lines.append('# The corpus\'s own test registrations, from the protocol.')
         lines.append('enable_testing()')
-        # `${TREE}` means two different things to a test command, and the
-        # difference only shows when the build is out-of-source:
-        #
-        #   * a path under `<tree>/bin` names a product THIS generator makes,
-        #     and it lands where the generator puts it;
-        #   * every other path was written relative to the CAPTURE build's
-        #     BINARY directory (the project's CMakeLists spells them with
-        #     `CMAKE_CURRENT_BINARY_DIR`), which is `<tree>` only when the
-        #     build is configured in place.
-        #
-        # The reference trees are in-source, which is why `${TREE}` alone
-        # looked right — and why the generated tree failed with
-        # `Failed to change working directory to <tree>/TESTING` when its
-        # registrations pointed at `<tree>/build/TESTING`.  Spelling the
-        # second kind as `${CMAKE_CURRENT_BINARY_DIR}` makes them follow the
-        # configure directory, which is what they meant all along.
-        bin_prefix = f'{str(tree).replace(chr(92), "/")}/bin/'
-
-        tree_prefix = str(tree).replace('\\', '/') + '/'
-
-        def _rebase(path: str) -> str:
-            """*path*, re-rooted to the configure directory when it is ours."""
-            norm = path.replace('\\', '/').rstrip('/')
-            if norm.startswith(bin_prefix):
-                return path               # this generator's own product
-            if norm == str(tree).replace('\\', '/').rstrip('/'):
-                # The tree root ITSELF — LAPACK's summary test runs there.
-                # A prefix test with a trailing separator misses it, and the
-                # miss is silent: the registration keeps an absolute path to
-                # the SOURCE tree, where the results are not.
-                return '${CMAKE_CURRENT_BINARY_DIR}'
-            if norm.startswith(tree_prefix):
-                return '${CMAKE_CURRENT_BINARY_DIR}/' + norm[len(tree_prefix):]
-            return path
+        # A registration's paths were resolved against the CAPTURE tree, so
+        # they are spelled `${TREE}/...` when under it, or absolute when
+        # outside.  A replay puts each product at the SAME `${TREE}`-relative
+        # place its recorded command wrote it — the build is a verbatim replay —
+        # so expanding `${TREE}` to THIS tree is all that is needed.  (An
+        # earlier generator picked its own output directory and had to re-root
+        # every path to it; a verbatim replay has no such choice to make.)
+        tree_norm = str(tree).replace(chr(92), '/').rstrip('/')
 
         def _test_path(text: str) -> str:
             # The tree placeholder can sit INSIDE an argument rather than at
-            # its start: `-DOUTPUT=${TREE}/TESTING/dec.out`.  Testing the
-            # whole token against a prefix therefore matches the bare paths
-            # and misses every `-D`, which is most of them — measured, 0 of
-            # 196 re-rooted.
-            spelled = expand_tree(_cmake_string(str(text)), tree)
-            head, sep, value = spelled.partition('=')
-            if sep and value.startswith('/'):
-                return head + '=' + _rebase(value)
-            return _rebase(spelled)
+            # its start: `-DOUTPUT=${TREE}/TESTING/dec.out`.  `expand_tree`
+            # handles that, and refuses a bare `$` rather than passing it on.
+            return expand_tree(_cmake_string(str(text)), tree)
+
+        def _under_tree(path: str) -> bool:
+            return path == tree_norm or path.startswith(tree_norm + '/')
 
         # A registration whose WORKING_DIRECTORY does not exist fails with
         # "Failed to change working directory" — which names the directory
@@ -392,7 +363,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
             _test_path(str(t.get('working_directory')))
             for t in tests if t.get('working_directory')} | out_dirs
         for wd in sorted(wd_dirs):
-            if wd.startswith('${CMAKE_CURRENT_BINARY_DIR}'):
+            if _under_tree(wd.replace('\\', '/')):
                 lines.append(f'file(MAKE_DIRECTORY "{_cmake_string(wd)}")')
         for t in tests:
             name = _cmake_string(str(t.get('name') or ''))
