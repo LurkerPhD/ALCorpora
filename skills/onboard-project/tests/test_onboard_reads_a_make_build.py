@@ -143,8 +143,8 @@ def test_the_archive_is_recorded_with_its_members_as_stems(built):
     proto = _protocol(built)
     archives = [p for p in proto.products if p.kind == 'archive']
     assert len(archives) == 1, [p.output for p in proto.products]
-    assert set(archives[0].members) == {'mis/alpha', 'mis/beta'}, (
-        archives[0].members)
+    assert set(archives[0].stems) == {'mis/alpha', 'mis/beta'}, (
+        archives[0].stems)
 
 
 def test_the_executable_is_recorded_and_its_objects_are_stems(built):
@@ -153,7 +153,7 @@ def test_the_executable_is_recorded_and_its_objects_are_stems(built):
     assert len(exes) == 1, [p.output for p in proto.products]
     defined = {e.stem for e in proto.compilation}
     for p in proto.products:
-        for m in tuple(p.members) + tuple(p.objects):
+        for m in p.stems:
             assert m in defined, f'{p.output} names {m!r}, not a unit'
             assert not m.endswith(('.o', '.f', '.f90')), m
 

@@ -207,11 +207,20 @@ class Product:
     #: changes every consumer's defined-symbol set.  Measured on a project
     #: that builds its library shared by default.
     shared: bool = False
-    #: Archive members, as STEMS — so the link line follows the state
-    #: instead of pinning the form that happened to be captured.
-    members: tuple[str, ...] = ()
-    #: An executable's own translation units, as stems.
-    objects: tuple[str, ...] = ()
+    #: What goes INTO this product, by STEM — the unit→product edges a
+    #: compile database cannot carry.  One field for both kinds, because the
+    #: relation is one relation: an archive's members and an executable's own
+    #: units are both "these units are inputs to this product", and ``kind``
+    #: already says which reading applies.  Splitting them into ``members``
+    #: and ``objects`` was two names for one thing, and nothing could tell
+    #: you which to fill in — the answer was always "whichever ``kind`` is".
+    #:
+    #: The value is the STEM, never a file name: a member spelled
+    #: ``isamax.f.o`` pins the link line to one form, and a unit converted to
+    #: C++ would then drop out of the archive while the line still asked for
+    #: it.  ``libs`` is the contrast that makes the naming matter — a library
+    #: is a PATH, because it may be one we did not build and have no stem for.
+    stems: tuple[str, ...] = ()
     libs: tuple[str, ...] = ()
     driver: str = ''
     flags: tuple[str, ...] = ()
@@ -230,7 +239,7 @@ class Product:
         out: dict = {'output': self.output, 'kind': self.kind}
         if self.shared:
             out['shared'] = True
-        for k in ('members', 'objects', 'libs', 'flags'):
+        for k in ('stems', 'libs', 'flags'):
             v = getattr(self, k)
             if v:
                 out[k] = list(v)
@@ -248,10 +257,16 @@ class Product:
         if missing:
             raise ProtocolError(
                 f'product missing {", ".join(missing)}: {d!r}')
+        # `members` and `objects` are read as well as `stems`: they were two
+        # names for this one field, and a protocol written before the merge
+        # carries whichever its producer filled in.  Reading both means an
+        # older file loads without being re-admitted, and the concatenation
+        # is the same relation the current shape states once.
         return cls(output=d['output'], kind=d['kind'],
                    shared=bool(d.get('shared')),
-                   members=tuple(d.get('members') or ()),
-                   objects=tuple(d.get('objects') or ()),
+                   stems=tuple(d.get('stems') or ())
+                   + tuple(d.get('members') or ())
+                   + tuple(d.get('objects') or ()),
                    libs=tuple(d.get('libs') or ()),
                    driver=d.get('driver') or '',
                    flags=tuple(d.get('flags') or ()),
@@ -554,7 +569,7 @@ class Protocol:
                 why = check_tree_invariant(getattr(p, name))
                 if why:
                     bad.append(f'products[{i}].{name}: {why}')
-            for m in tuple(p.members) + tuple(p.objects):
+            for m in p.stems:
                 if m not in defined:
                     bad.append(
                         f'products[{i}] {p.output} needs {m!r}, which no '

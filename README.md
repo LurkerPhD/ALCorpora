@@ -137,7 +137,7 @@ a built tree
    |            source in two edges)
    |           `- _units : stem = source below its own root, extension removed
    |
-   |- _products    : link targets; members/objects recorded as STEMS; libs in ORDER
+   |- _products    : link targets; their inputs recorded as STEMS; libs in ORDER
    |- _generated   : CUSTOM_COMMAND outputs + command + depends
    |- produced set : decides each path's SPELLING (must be known before spelling)
    |- own_roots    : which units are the project's own (.gitmodules / cache _SOURCE_DIR)

@@ -159,7 +159,7 @@ def test_a_products_members_are_stems_so_a_flip_follows(built):
     proto = extract_protocol(build, tree_root=root)
     defined = {e.stem for e in proto.compilation}
     for p in proto.products:
-        for m in tuple(p.members) + tuple(p.objects):
+        for m in p.stems:
             assert m in defined, f'{p.output} names {m!r}, which is not a unit'
             assert not m.endswith(('.o', '.f', '.f90')), (
                 f'member {m!r} carries an extension, so it cannot follow a flip')

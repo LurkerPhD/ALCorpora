@@ -125,7 +125,7 @@ CMake)。把它编码进工具,就是把项目知识推进了工具里。一条�
    |           (一个 unit != 一条 compdb 记录:CMake 把扫描型源编成两步)
    |           `- _units : stem = 源相对它自己的根部,去扩展名
    |
-   |- _products    : 链接目标;成员/objects 记成 STEM;libs 保序
+   |- _products    : 链接目标;输入记成 STEM;libs 保序
    |- _generated   : CUSTOM_COMMAND 的产出 + 命令 + depends
    |- produced 集  : 决定每条路径的**拼写**(必须在拼写之前算出来)
    |- own_roots    : 哪些 unit 是项目自己的(.gitmodules / cache 的 _SOURCE_DIR)

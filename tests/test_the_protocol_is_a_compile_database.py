@@ -31,7 +31,7 @@ def _proto() -> Protocol:
                          provides=('m',), uses=('m',)),
         ],
         products=[Product(output='/b/libx.a', kind='archive',
-                          members=('a', 'b'))],
+                          stems=('a', 'b'))],
     )
 
 
@@ -92,3 +92,32 @@ def test_a_plain_compile_database_is_still_the_weak_form(tmp_path):
     # The compilation half is exact; the products half is empty, so a
     # consumer that needs a link line fails loudly rather than inventing one.
     assert proto.products == []
+
+
+def test_a_product_merged_its_two_names_for_one_relation():
+    """`members` and `objects` were one relation under two names.
+
+    Which one was filled in was decided by `kind` and nothing else — an
+    archive's members and an executable's own units are both "these units go
+    into this product".  A protocol is an interface, so the duplicate name is
+    a tax on every consumer: two spellings of one fact, and no way to know
+    which to write.  The field is `stems` now — the value's own name, since
+    each entry is a `CompileEntry.stem`.
+
+    Both older spellings still READ, so a protocol written before the merge
+    loads without being re-admitted.  Nothing writes them.
+    """
+    from protocolize.private_protocol import Product
+
+    old_archive = {'output': '${TREE}/lib/a.a', 'kind': 'archive',
+                   'members': ['SRC/x', 'SRC/y']}
+    old_exe = {'output': '${TREE}/bin/a', 'kind': 'exe',
+               'objects': ['SRC/z'], 'libs': ['${TREE}/lib/a.a']}
+
+    assert Product.from_json(old_archive).stems == ('SRC/x', 'SRC/y')
+    assert Product.from_json(old_exe).stems == ('SRC/z',)
+
+    for written in (Product.from_json(old_archive).to_json(),
+                    Product.from_json(old_exe).to_json()):
+        assert 'stems' in written
+        assert 'members' not in written and 'objects' not in written

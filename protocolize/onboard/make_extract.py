@@ -334,7 +334,7 @@ def extract_make_protocol(tree: str | Path, *,
         ar_line = _archive_line(directory, archive_path, member_tokens)
         products.append(Product(
             output=tc.in_tree_space(archive_path), kind='archive',
-            members=tuple(stems),
+            stems=tuple(stems),
             command=(tc.in_tree_space_cmd(
                 _absolutise_paths(ar_line, str(directory)), directory)
                 if ar_line else ''),
@@ -572,7 +572,7 @@ def _parse_link(tc: Toolchain, directory: Path, argv: list[str],
     # re-spelled against the tree — a replay runs them verbatim, and a
     # directory left absolute would make it write into the CAPTURE tree.
     return Product(output=tc.in_tree_space(out_abs), kind='exe',
-                   objects=tuple(objects), libs=tuple(libs), driver=driver,
+                   stems=tuple(objects), libs=tuple(libs), driver=driver,
                    command=tc.in_tree_space_cmd(
                        _absolutise_paths(shlex.join(argv), str(directory)),
                        directory),

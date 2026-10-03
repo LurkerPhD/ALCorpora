@@ -242,7 +242,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         out = _expand(prod.output, tree)
         cwd = _expand(prod.directory, tree) if prod.directory else tree
         deps: list[str] = []
-        for stem in (*prod.members, *prod.objects):
+        for stem in prod.stems:
             deps += [_unit_output(o, tree) for o in by_stem.get(stem, ())]
         for lib in prod.libs:
             ref = _expand(lib, tree)

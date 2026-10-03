@@ -53,7 +53,7 @@ protocol from a real project is the best example. In brief:
   "compilation": [ {directory, command, file, output,
                     stem, language, provides, uses, preprocess}, ... ],
   "generated_inputs": [ {output, command, depends}, ... ],
-  "products":         [ {output, kind, objects|members, libs, driver}, ... ]
+  "products":         [ {output, kind, stems, libs, driver}, ... ]
 }
 ```
 
@@ -63,7 +63,7 @@ format can read this file. Everything else answers questions a compile
 database cannot, and each one is load-bearing:
 
 **`stem`** — the unit's identity with the extension removed and case kept.
-It is the protocol's key: a product names its members as stems, so the link
+It is the protocol's key: a product names its inputs as stems, so the link
 line refers to a unit by its identity rather than by the file that happens to
 hold it.
 
@@ -76,7 +76,9 @@ compiles a scanned source in two steps and does not give them the same
 flags: the `-D` set arrives on the preprocess edge only.** A consumer that
 re-runs only `command` silently drops every conditional block.
 
-**`products`** — what links, with **members recorded as stems**. This is what
+**`products`** — what links, with **its inputs recorded as stems** (`stems`
+is ONE field: an archive's members and an executable's own units are the same
+relation, and `kind` says which reading applies). This is what
 makes a state-driven build possible at all: flipping a unit changes which
 object the link line names without the product changing.
 

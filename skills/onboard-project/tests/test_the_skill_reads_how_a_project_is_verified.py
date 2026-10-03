@@ -73,7 +73,7 @@ def _proto(tests: list | None = None) -> Protocol:
     return Protocol(
         compilation=[], generated_inputs=[],
         products=[Product(output='${TREE}/bin/prog', kind='exe',
-                          objects=('a',))],
+                          stems=('a',))],
         tests=tests or [], comment='t')
 
 

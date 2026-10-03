@@ -933,11 +933,11 @@ def _products(tc: Toolchain, by_object: dict[str, str]) -> list[Product]:
             output=tc.in_tree_space(target),
             kind=kind,
             shared=shared,
-            # An archive's members are what goes INTO it; an executable's own
-            # units are separate from the libraries it links, and the flat
-            # generator reads them as different fields.
-            members=tuple(objects) if kind == 'archive' else (),
-            objects=tuple(objects) if kind == 'exe' else (),
+            # What goes INTO the product, by stem — one field for both
+            # kinds, because `kind` already says which reading applies.
+            # `libs` is separate because a library is a PATH, not a stem:
+            # it may be one this protocol does not build.
+            stems=tuple(objects),
             libs=tuple(libs) if kind == 'exe' else (),
             # Re-rooted like every other recorded command, so a replay writes
             # its products into ITS tree, not the capture tree.

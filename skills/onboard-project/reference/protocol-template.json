@@ -92,13 +92,11 @@
         "kind": "exe",
         "_kind": "'exe' | 'archive'. An 'archive' is a static library; set 'shared' for a .so/.dylib.",
         "shared": false,
-        "objects": [
+        "stems": [
           "SRC/a",
           "SRC/b"
         ],
-        "_objects": "For an 'exe': the STEMS of its own translation units.",
-        "members": [],
-        "_members": "For an 'archive': the STEMS that go into it.",
+        "_stems": "What goes INTO this product, by STEM — the edge a compile database cannot carry, and the only reason a consumer can ORDER the replay instead of running the commands in a heap. ONE field for both kinds: an archive's members and an executable's own translation units are the same relation, and `kind` already says which reading applies. The value is a stem (the value's own name), never a file name — a member spelled `isamax.f.o` pins the link line to one form, so a unit later compiled to C++ would drop out of the archive while the line still asked for it. Contrast `libs`, which is a PATH because the library may be one this protocol does not build and has no stem for.",
         "libs": [
           "${TREE}/lib/libx.a"
         ],
