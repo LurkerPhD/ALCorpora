@@ -6,7 +6,7 @@ number,name,language,build_system,verification,native,build_protocol_a,verify_on
 005,goldenField,C++,CMake+Ninja,golden+fields,yes,yes,yes,yes,PASS,minimal sample golden + field_model (tracked source)
 006,cJSON,cpp,,,yes,yes,yes,yes,PASS,fetched from source
 007,tinyxml2,cpp,,,yes,yes,yes,yes,PASS,fetched from source
-009,NASTRAN-95,fortran,make,nastran.exe on own verification/D01-00-0A,yes,no,no,no,FAIL_A,"TOOL DEFECT (make backend): Product.command is never set, so the flat replay emits TARGET blocks with only make_directory and never links/archives any product; with make all + Product.command captured, A passes (5 products compared). B also blocked: fetch.py passes no corpus preparation facts, so the plan stages nothing (no NASTRANHOME/NASTRANCFG/dmap) and the reference run captures no goldens."
+009,NASTRAN-95,fortran,make,nastran on 132 verification decks (golden),yes,yes,yes,yes,PASS,one_per_dir; 1831 units; 5 products replayed in A; 132/132 on the project and on the replay
 010,jansson,cpp,,,yes,yes,yes,yes,PASS,fetched from source
 011,zlib,cpp,,,yes,yes,yes,yes,PASS,fetched from source
 013,fmt,cpp,,,yes,yes,yes,yes,PASS,fetched from source
