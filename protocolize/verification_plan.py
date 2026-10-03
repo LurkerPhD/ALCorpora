@@ -429,6 +429,10 @@ class VerificationPlan:
             why = self._binding_problem(self.golden.root, 'golden.root')
             if why:
                 bad.append(why)
+            else:
+                why = self._reference_run_under_a_run_root(self.golden.root)
+                if why:
+                    bad.append(why)
 
         for i, p in enumerate(self.produced):
             name = p.get('name', '')
@@ -545,6 +549,47 @@ class VerificationPlan:
         return (f'{where} is {text!r}, a literal path: a root names a BINDING '
                 f'({", ".join("{" + b + "}" for b in BINDINGS[:4])}, or '
                 f'{TREE!r} for the capture tree)')
+
+    #: Where a golden captured by a reference run may live.  Both are OUTPUT
+    #: roots that only this tool writes: `origin` is where `ensure_reference`
+    #: copies what the run produced, and `results` is where a run reports.
+    _RUN_ROOTS = frozenset({'origin', 'results'})
+
+    def _reference_run_under_a_run_root(self, root: str) -> str | None:
+        """A reference-run golden may only come from a RUN, never the repo.
+
+        ``golden.source: reference_run`` means "this golden is what the
+        project's own build produced when it ran".  A ``root`` naming the
+        capture tree (``${TREE}``) instead makes it something else entirely:
+        a file the PROJECT SHIPPED, read out of its repository.  That is a
+        different claim with the same field — it says the tool's run agrees
+        with a 1995 output from another machine, which is a comparison
+        against another machine's rounding, its platforms, and its bugs.
+
+        So the two are kept apart structurally.  A project's own reference
+        output is INPUT: if a corpus ships one and it is worth comparing
+        against, the comparison belongs in the project's declaration, not
+        smuggled in as a golden.  The golden is always re-made here, by
+        running the build.
+        """
+        if root == TREE or root.startswith(f'{TREE}/'):
+            return (
+                f'golden.root is {root!r} — the CAPTURE TREE — while '
+                f'golden.source is "reference_run": a golden must be what a '
+                f'run of the project PRODUCED, and a root inside the project '
+                f'repository names a file the project SHIPPED.  Comparing '
+                f'against the repository\'s own output proves agreement with '
+                f'another machine, not that this build ran correctly.  Point '
+                f'golden.root at a run output root ({", ".join("{" + b + "}" for b in sorted(self._RUN_ROOTS))}).')
+        name = root.strip('{}') if root.startswith('{') else None
+        if name is not None and name not in self._RUN_ROOTS:
+            return (
+                f'golden.root is {root!r} while golden.source is '
+                f'"reference_run": only a run output root may hold a captured '
+                f'golden ({", ".join("{" + b + "}" for b in sorted(self._RUN_ROOTS))}).  A golden read from the project '
+                f'itself is the project\'s own reference output — an INPUT, '
+                f'not a golden.')
+        return None
 
     def _spelling_problems(self) -> list[tuple[str, str]]:
         """Every ``$`` in the plan, checked by the protocol's own rule."""

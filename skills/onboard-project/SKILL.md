@@ -324,7 +324,25 @@ is refused when it could produce a verdict with nothing behind it:
 * a `golden.source: none` with no `stamp` — then every origin counts as ready,
   including one a killed reference run left half written;
 * a bare `$` in a path (`$$` is a literal dollar), or a `golden.root` that is a
-  literal path rather than a binding.
+  literal path rather than a binding;
+* a `golden.root` under the capture tree (`${TREE}`) while
+  `golden.source: reference_run` — that names a file the PROJECT SHIPPED, not
+  one a run produced.  See "The golden is made, never borrowed" below.
+
+**The golden is made, never borrowed.**  A repository supplies **input files**;
+the tool runs the native build to make the golden.  That is what
+`reference_run` means, and it is not a formality: a corpus that ships its own
+reference output usually produced it on another machine, another compiler and
+another operating system — one old corpus's shipped `.out` files all carry a
+1995 banner from an OS this machine does not have, and not one of its 132 cases
+is byte-identical to what the same decks produce here.  Using those as goldens
+would turn a real comparison into a fixture nothing can satisfy, and worse, a
+build that merely copied a stale file would "pass".
+
+So the repository's own reference output is an **input**, and comparing against
+it — a legitimate thing to want — belongs in the project's `declaration`, never
+in `golden`.  `golden.root` is therefore restricted to a run output root
+(`{origin}`, `{results}`); anything else is refused when the plan is read.
 
 **The origin is one rule for every project**: run the REFERENCE instance
 through this same plan and keep what the plan calls golden.  The reference and
