@@ -441,6 +441,7 @@
       "reference": "{golden}",
       "drop": [],
       "rtol": 0.05,
+      "atol": 0.5,
       "model": {
         "_README": [
           "Which token positions of each table are PHYSICAL QUANTITIES.",
@@ -449,7 +450,8 @@
           "letter is matched unspaced).",
           "Each row rule names the SHAPE it applies to -- `first_eq`, `first_int`,",
           "`second_int`, `n_tokens` -- and the `fields` it reads.  A row matching",
-          "no rule is still COMPARED, by the ordinary numeric comparison:",
+          "no rule is still COMPARED, by the ordinary numeric comparison,",
+          "whose ABSOLUTE floor is the assertion's `atol`:",
           "treating it as 'not declared, therefore not judged' would turn every",
           "shape the model forgot into a region nobody checks.",
           "`near_zero` is the magnitude below which a component is a THEORETICAL",

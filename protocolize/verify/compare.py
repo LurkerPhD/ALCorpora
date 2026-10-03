@@ -232,6 +232,7 @@ def _fields_close(gen: list[float], base: list[float], *,
 
 def field_lockstep(gen_text: str, base_text: str, *, model: dict,
                    drop=(), rtol: float = DEFAULT_RTOL,
+                   atol: float | None = None,
                    max_diffs: int | None = 20) -> list[tuple]:
     """Lockstep, comparing the declared PHYSICAL columns of each table.
 
@@ -239,10 +240,17 @@ def field_lockstep(gen_text: str, base_text: str, *, model: dict,
     rule, fall back to ``numclose`` — so an unrecognised row is compared
     rather than skipped, and a corpus's unknown table cannot become a region
     nobody checks.
+
+    ``atol`` is that fallback's absolute floor, and it is a DECLARED number,
+    not a derived one: a plan that measured how far an unrecognised row
+    legitimately drifts says so here.  Left out it is the model's ``near_zero``
+    — the magnitude the corpus already declares as "a theoretical zero" — so a
+    plan written before this parameter existed behaves exactly as it did.
     """
     gl = normalize(gen_text, drop)
     bl = normalize(base_text, drop)
     near_zero = float(model.get('near_zero', 1e-3))
+    abs_tol = near_zero if atol is None else float(atol)
     titles: dict[str, dict] = {}
     for table in model.get('tables', ()):
         for title in table.get('titles', ()):
@@ -273,7 +281,7 @@ def field_lockstep(gen_text: str, base_text: str, *, model: dict,
             if gf is not None and bf is not None:
                 if not _fields_close(gf, bf, rtol=rtol, near_zero=near_zero):
                     diffs.append((i, gl[i], bl[i]))
-            elif not numclose(gl[i], bl[i], rtol=rtol, atol=near_zero):
+            elif not numclose(gl[i], bl[i], rtol=rtol, atol=abs_tol):
                 diffs.append((i, gl[i], bl[i]))
         if max_diffs is not None and len(diffs) >= max_diffs:
             more = max(len(gl), len(bl)) - i - 1

@@ -888,7 +888,8 @@ def _check_assertions(plan, env: Env, case: Case) -> CaseResult | None:
                 produced.read_text(encoding='utf-8', errors='replace'),
                 golden.read_text(encoding='utf-8', errors='replace'),
                 model=a.get('model') or {}, drop=a.get('drop', ()),
-                rtol=a.get('rtol', compare.DEFAULT_RTOL))
+                rtol=a.get('rtol', compare.DEFAULT_RTOL),
+                atol=a.get('atol'))
             if diffs:
                 return CaseResult(case.id, 'diff', 0.0,
                                   f'({len(diffs)} diffs)', diffs)
