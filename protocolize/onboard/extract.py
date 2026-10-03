@@ -1991,13 +1991,19 @@ def _tiers(proj: Path) -> list[list[Path]]:
 
 
 def _find_case_lists(root: Path) -> list[Path]:
-    """Every case list *root* declares, in the project's own file names."""
+    """Every case list *root* declares, in the project's own file names.
+
+    Our own scratch is filtered out.  `.work` holds a MIRROR OF THE WHOLE
+    TREE, so an unfiltered `rglob` finds the project's declaration twice and
+    `_locate` — correctly — refuses as ambiguous.  The refusal is right; the
+    file that provoked it is ours, not the project's.
+    """
     out: list[Path] = []
     for name in _CASE_LIST_NAMES:
         for cand in sorted(root.glob(f'**/{name}')):
             if cand.is_file() and cand not in out:
                 out.append(cand)
-    return out
+    return _our_own_files(out)
 
 
 def _find_case_dirs(root: Path) -> list[Path]:
@@ -2008,7 +2014,7 @@ def _find_case_dirs(root: Path) -> list[Path]:
             if cand.is_dir() and any(d.is_dir() for d in cand.iterdir()) \
                     and cand not in out:
                 out.append(cand)
-    return out
+    return _our_own_files(out, dirs=True)
 
 
 def _locate(proj: Path, finders) -> Path | None:

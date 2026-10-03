@@ -165,8 +165,20 @@ def _mirror(source: Path, dest: Path) -> None:
     """
     if dest.exists():
         shutil.rmtree(dest)
+    skip = set(_SKIP)
+    # Our OWN scratch may live inside the tree being mirrored.  A project
+    # whose checkout is the benchmark directory itself — the minimal samples,
+    # whose `CMakeLists.txt` sits at the top with `source/` beside it — is
+    # captured with `tree_root = dest`, so `${dest}/.work/tree` is UNDER
+    # `${dest}`.  Copying that subtree copies the copy, and the copy contains
+    # the copy: measured, `copytree` recursed until the interpreter's stack
+    # ran out (the traceback surfaced inside `fnmatch.filter`).  The subtree
+    # that CONTAINS the destination is the only one that can do this, so it
+    # is the one that gets skipped.
+    if dest.is_relative_to(source):
+        skip.add(dest.relative_to(source).parts[0])
     shutil.copytree(source, dest, symlinks=True,
-                    ignore=shutil.ignore_patterns(*_SKIP))
+                    ignore=shutil.ignore_patterns(*skip))
 
 
 def self_check(protocol: Protocol, *, tree: Path | str,

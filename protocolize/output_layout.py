@@ -62,7 +62,15 @@ RESULTS_DIR = 'benchmark_results'
 #: and sorted BEFORE the real `bin/<config>`, so the capture staged the stale
 #: copy — and the substitution it then tried to apply was not in it, so every
 #: case died naming a file the project had all along.
-RUN_OUTPUT_DIRS = (RESULTS_DIR,)
+#:
+#: `.work` is the same hazard at a larger scale.  It holds the proof's scratch
+#: and, under it, a MIRROR OF THE WHOLE TREE — so a search that descends into
+#: it finds a second copy of everything the project has.  Measured while
+#: re-proving a minimal sample: the acceptance search found the suite twice
+#: (`<tree>/verification` and `<tree>/.work/tree/verification`) and refused,
+#: correctly, as ambiguous — the corpus's own rule working as designed against
+#: a file that was ours, not its.
+RUN_OUTPUT_DIRS = (RESULTS_DIR, '.work')
 
 
 def assign_dirs(sources: Iterable[Path],

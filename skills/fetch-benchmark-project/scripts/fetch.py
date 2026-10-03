@@ -46,6 +46,15 @@ def record_row(number: int, name: str, **values) -> None:
     A CSV keyed by NUMBER rather than an append log: re-admitting a project
     updates its row in place instead of adding a second one, and the file
     stays sorted so it reads as the benchmark's current state.
+
+    Update MERGES.  A column the caller does not pass keeps whatever the row
+    already said, because the row holds two different kinds of fact: the
+    VERDICT columns, which a run produces, and the DESCRIPTIVE ones
+    (`language`, `build_system`, `verification`, `notes`), which say what the
+    project IS.  Measured while re-proving the minimal samples: a blanking
+    update turned `Fortran,CMake+Ninja,ctest` into `fortran,,` — a re-prove
+    that reached the SAME verdict destroyed what the row said about the
+    project, and the CSV then read as if that had been measured.
     """
     rows: dict[int, dict] = {}
     if BENCH_CSV.is_file():
@@ -56,7 +65,8 @@ def record_row(number: int, name: str, **values) -> None:
                     rows[int(row['number'])] = row
                 except (KeyError, ValueError):
                     continue
-    row = {c: values.get(c, '') for c in CSV_COLUMNS}
+    row = {c: rows.get(number, {}).get(c, '') for c in CSV_COLUMNS}
+    row.update({c: v for c, v in values.items() if c in CSV_COLUMNS})
     row['number'] = f'{number:03d}'
     row['name'] = name
     rows[number] = row
@@ -203,18 +213,27 @@ def _language(proto) -> str:
 def prove_legal(dest: Path, src: Path, build: Path, number: int,
                 src_name: str, remedies: 'list | None' = None,
                 facts: Path | None = None,
-                declaration: Path | None = None) -> int:
-    """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row."""
+                declaration: Path | None = None,
+                notes: str = 'fetched from source') -> int:
+    """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row.
+
+    *notes* says what THIS admission is.  A re-prove passes nothing, so the
+    row keeps the description it already had instead of every replay
+    relabelling an in-tree sample as "fetched from source".
+    """
     from protocolize.onboard.extract import (ExtractionError,
                                              capture_verification,
                                              extract_and_prove)
     from protocolize.verification_plan import VerificationPlan
     from protocolize.verify import cli
 
-    def fail(notes, **cols):
-        print(f'NOT LEGAL — {notes}', file=sys.stderr)
-        record_row(number, src_name, language=cols.pop('language', ''),
-                   native='yes', **cols, notes=notes)
+    def fail(why, **cols):
+        print(f'NOT LEGAL — {why}', file=sys.stderr)
+        # The VERDICT columns only, plus `language` when this run actually
+        # learned it.  Anything not passed keeps whatever the row already
+        # said — a run that failed before reading the sources must not blank
+        # a column it never measured.
+        record_row(number, src_name, native='yes', **cols, notes=why)
         return 1
 
     work = dest / '.work'
@@ -298,10 +317,16 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
     print('  §B: green on the replay — the two verdicts agree')
 
     shutil.rmtree(work, ignore_errors=True)
-    record_row(number, src_name, language=lang, native='yes',
-               build_protocol_a='yes', verify_on_project_b='yes',
-               verify_on_replay_b='yes', status='PASS',
-               notes='fetched from source')
+    row = dict(language=lang, native='yes', build_protocol_a='yes',
+               verify_on_project_b='yes', verify_on_replay_b='yes',
+               status='PASS')
+    # Only a FIRST admission gets to label the row.  A re-prove reached the
+    # same verdict about the same project, so it must not overwrite what the
+    # row says the project IS — measured: replaying a tracked in-tree sample
+    # relabelled it "fetched from source", which is false about it.
+    if notes:
+        row['notes'] = notes
+    record_row(number, src_name, **row)
     print(f'LEGAL: benchmark/{dest.name}/ holds the source, protocol.json, '
           f'verification_plan.json')
     return 0
@@ -321,7 +346,18 @@ def _inner_source(dest: Path) -> Path:
     Chosen by what it HOLDS — a build system — rather than by name, so an
     output directory a run left behind (`benchmark_results/`) is not mistaken
     for the source.
+
+    The benchmark directory ITSELF can be the source.  The minimal samples are
+    laid out that way (a `CMakeLists.txt` at the top with a `source/` beside
+    it, tracked in place rather than checked out into a subdirectory), and
+    without this branch the search picks the first SUBdirectory holding a
+    build system — `source/`, which holds none — and re-proving the sample
+    dies on "does not appear to contain CMakeLists.txt".  The project's own
+    statement wins over the search only when there is nothing to search.
     """
+    for marker in ('CMakeLists.txt', 'Makefile', 'configure'):
+        if (dest / marker).is_file():
+            return dest
     dirs = [d for d in sorted(dest.iterdir())
             if d.is_dir() and not d.name.startswith('.')
             and d.name not in _OUTPUT_DIRS]

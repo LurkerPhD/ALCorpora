@@ -207,7 +207,10 @@ def _readmit(M: dict, args) -> int:
         dest.name.split('-', 1)[-1], remedies,
         facts=M['_require_present'](M['_declared'](args.facts, src), '--facts'),
         declaration=M['_require_present'](
-            M['_declared'](args.declaration, src), '--declaration'))
+            M['_declared'](args.declaration, src), '--declaration'),
+        # A re-prove proves the SAME project again; it has nothing new to say
+        # about what the project is, so the row keeps its description.
+        notes=None)
 
 
 def _clear_previous_build(src: Path, tree_subdir: str) -> None:
