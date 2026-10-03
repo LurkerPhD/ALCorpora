@@ -72,6 +72,9 @@ class CheckReport:
     products: int = 0
     #: Products found in the replayed build and compared by symbols.
     compared: int = 0
+    #: The names behind ``compared``, for a caller that needs to know WHICH
+    #: products were checked rather than only how many.
+    compared_names: list[str] = field(default_factory=list)
     #: Products the protocol names that the replay did not produce.
     missed: list[str] = field(default_factory=list)
     #: Products whose defined symbols differ from the project's own build.
@@ -193,8 +196,23 @@ def self_check(protocol: Protocol, *, tree: Path | str,
     # The capture tree holds the finished file — the project's build wrote
     # it — so leaving it there would let the replay compile the project's
     # output and pass without ever running the rule that produces it.
-    for g in protocol.generated_inputs:
-        out = Path(expand_tree(g['output'], scratch))
+    #
+    # A PRODUCT is the same case and the same vacuity, and it is the one that
+    # hides a whole backend: a make build leaves its archive and executables
+    # BESIDE the sources, so the mirror carries them, and a product whose
+    # command the replay never ran is then "found" — in the copy of the very
+    # file it would be compared against — and reported COMPARED while nothing
+    # built it.  Measured: every product of a make project passed this way.
+    for spelling in ([g['output'] for g in protocol.generated_inputs]
+                     + [p.output for p in protocol.products]):
+        out = Path(expand_tree(spelling, scratch))
+        # Only inside the replay's own tree.  A spelling left absolute names
+        # the capture tree, which the replay READS: deleting there would
+        # destroy the project it is proving something about.
+        try:
+            out.resolve().relative_to(scratch)
+        except ValueError:
+            continue
         if out.is_file():
             out.unlink()
 
@@ -230,6 +248,7 @@ def self_check(protocol: Protocol, *, tree: Path | str,
             continue
         if _defined_symbols(mine) == _defined_symbols(theirs):
             report.compared += 1
+            report.compared_names.append(name)
         else:
             report.differing.append(name)
 
