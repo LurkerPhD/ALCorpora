@@ -33,6 +33,39 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 BENCH = REPO / 'benchmark'
+BENCH_CSV = BENCH / 'benchmark.csv'
+CSV_COLUMNS = ('number', 'name', 'language', 'build_system', 'native',
+               'build_protocol_a', 'verify_on_project_b', 'verify_on_replay_b',
+               'status', 'notes')
+
+
+def record_row(number: int, name: str, **values) -> None:
+    """Add or replace this project's row in `benchmark/benchmark.csv`.
+
+    A CSV keyed by NUMBER rather than an append log: re-admitting a project
+    updates its row in place instead of adding a second one, and the file
+    stays sorted so it reads as the benchmark's current state.
+    """
+    rows: dict[int, dict] = {}
+    if BENCH_CSV.is_file():
+        import csv
+        with BENCH_CSV.open(encoding='utf-8', newline='') as fh:
+            for row in csv.DictReader(fh):
+                try:
+                    rows[int(row['number'])] = row
+                except (KeyError, ValueError):
+                    continue
+    row = {c: values.get(c, '') for c in CSV_COLUMNS}
+    row['number'] = f'{number:03d}'
+    row['name'] = name
+    rows[number] = row
+    import csv
+    BENCH.mkdir(parents=True, exist_ok=True)
+    with BENCH_CSV.open('w', encoding='utf-8', newline='') as fh:
+        w = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+        w.writeheader()
+        for k in sorted(rows):
+            w.writerow(rows[k])
 
 
 def next_number(bench: Path) -> int:
@@ -104,6 +137,16 @@ def native(src: Path, args) -> tuple[bool, str]:
     return True, log
 
 
+def _language(proto) -> str:
+    """The project's dominant source language, from the protocol itself."""
+    counts: dict[str, int] = {}
+    for e in proto.compilation:
+        counts[e.language or '?'] = counts.get(e.language or '?', 0) + 1
+    if not counts:
+        return '?'
+    return max(counts, key=counts.get)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('source', help='github url, or a local path to copy')
@@ -143,6 +186,9 @@ def main(argv=None) -> int:
     if not ok:
         print('REFUSED: the project does not build and verify natively.\n' + log,
               file=sys.stderr)
+        record_row(n, src_name, native='no', build_protocol_a='no',
+                   verify_on_project_b='no', verify_on_replay_b='no',
+                   status='REFUSED', notes='does not build/verify natively')
         return 1
     print('  native build + verify: OK')
 
@@ -158,6 +204,9 @@ def main(argv=None) -> int:
     except ExtractionError as exc:
         print(f'NOT LEGAL — §A failed (the protocol does not replay the '
               f'project):\n{exc}', file=sys.stderr)
+        record_row(n, src_name, native='yes', build_protocol_a='no',
+                   verify_on_project_b='no', verify_on_replay_b='no',
+                   status='FAIL_A', notes='protocol does not replay the project')
         return 1
     print(f'  §A: {report.compared} products compared, OK')
 
@@ -168,15 +217,21 @@ def main(argv=None) -> int:
     if plan.problems():
         print('NOT LEGAL — §B: the captured plan is not executable:\n  '
               + '\n  '.join(plan.problems()), file=sys.stderr)
+        proto.save(dest / 'protocol.json')
         return 1
     plan.save(dest / 'verification_plan.json')
 
     # §B on the project's own build.
     from protocolize.verify import cli
+    lang = _language(proto)
     rc = cli.main([str(dest), '--tree', str(src)])
     if rc != 0:
         print(f'NOT LEGAL — §B failed on the project\'s own build (exit {rc})',
               file=sys.stderr)
+        record_row(n, src_name, language=lang, native='yes',
+                   build_protocol_a='yes', verify_on_project_b='no',
+                   verify_on_replay_b='no', status='FAIL_B_REF',
+                   notes='plan not green on the project')
         return 1
     print('  §B: green on the project\'s own build')
 
@@ -187,10 +242,17 @@ def main(argv=None) -> int:
     rc = cli.main([str(flat), '--tree', str(flat)])
     if rc != 0:
         print(f'NOT LEGAL — §B failed on the REPLAY (exit {rc})', file=sys.stderr)
+        record_row(n, src_name, language=lang, native='yes',
+                   build_protocol_a='yes', verify_on_project_b='yes',
+                   verify_on_replay_b='no', status='FAIL_B_FLAT',
+                   notes='replay does not reach the same verdict')
         return 1
     print('  §B: green on the replay — the two verdicts agree')
 
     shutil.rmtree(work, ignore_errors=True)
+    record_row(n, src_name, language=lang, native='yes',
+               build_protocol_a='yes', verify_on_project_b='yes',
+               verify_on_replay_b='yes', status='PASS', notes='fetched from source')
     print(f'LEGAL: benchmark/{dest.name}/ holds the source, protocol.json, '
           f'verification_plan.json')
     return 0
