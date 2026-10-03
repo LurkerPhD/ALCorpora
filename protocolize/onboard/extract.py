@@ -1982,6 +1982,24 @@ def _locate(proj: Path, finders) -> Path | None:
     return None
 
 
+def _target_dirs(proto: Protocol) -> list[str]:
+    """The directories a product corpus's binaries were BUILT into, as bindings.
+
+    Taken from where the products' own commands wrote them, not assumed: a
+    CMake project puts its executable under `<tree>/build`, a Makefile project
+    where it linked.  `{tree}` is the binding for `${TREE}` — the RUN says
+    which tree that is.
+    """
+    dirs: list[str] = []
+    for p in proto.products:
+        if p.kind != 'exe':
+            continue
+        d = str(Path(p.output).parent).replace('${TREE}', '{tree}')
+        if d not in dirs:
+            dirs.append(d)
+    return dirs or ['{tree}/bin']
+
+
 def _record_layout(sample: str) -> dict:
     """The record's own columns, read from a line of it.
 
@@ -2170,7 +2188,8 @@ def _verification_from_case_list(proto: Protocol, cases_file: Path,
             break
     return {
         'plan_version': 1,
-        'target': {'kind': 'product', 'product': product},
+        'target': {'kind': 'product', 'product': product,
+                   'dirs': _target_dirs(proto)},
         'cases': {'kind': 'case_list',
                   'root': _tree_spelling(proj_root, root),
                   'deck_root': _tree_spelling(decks_root, root),
@@ -2439,7 +2458,8 @@ def _verification_from_case_dirs(proto: Protocol, case_dir: Path,
             break
     return {
         'plan_version': 1,
-        'target': {'kind': 'product', 'product': product},
+        'target': {'kind': 'product', 'product': product,
+                   'dirs': _target_dirs(proto)},
         'cases': {'kind': 'one_per_dir',
                   'root': _tree_spelling(case_dir, root),
                   'exclude': exclude,
@@ -2470,15 +2490,14 @@ def _verification_from_case_dirs(proto: Protocol, case_dir: Path,
         # measured, the case ran there and produced its report there, while
         # the plan looked for it in the directory it used to be in, and the
         # chain's own members reported "no output".
-        'produced': [{'name': '{work}/{input.stem}.out', 'as': 'out'},
-                     {'name': '{work}/{input.stem}.sof1', 'as': 'sof1'}],
+        # WHAT each case writes, from the project's own declaration — never a
+        # name baked in here.  A project that writes exactly one artifact
+        # (every one the comparison reads) needs no declaration; one whose
+        # run also hands state forward names it (a restart chain's state).
+        'produced': _declared_produced(facts),
         'golden': {'source': 'reference_run', 'root': '{origin}',
-                   'path': '{case_id}/{input.stem}.out'},
-        'assertions': [
-            {'kind': 'artifact', 'path': '{out}', 'exists': True},
-            {'kind': 'text_lockstep', 'produced': '{out}',
-             'reference': '{golden}', **_lockstep_rules(rules)},
-        ],
+                   'path': '{%s}/{input.stem}%s' % _golden_place(facts)},
+        'assertions': _case_list_assertions(facts, rules),
         'report': {'repeats': 1},
         'summary': {'require_zero': ['diff', 'crash', 'timeout'],
                     'require_min': {'pass': 1}},
@@ -2487,6 +2506,30 @@ def _verification_from_case_dirs(proto: Protocol, case_dir: Path,
                        'correctness — the corpus ships no reference output'),
         'comment': f'captured from {case_dir}',
     }
+
+
+def _declared_produced(facts: dict | None) -> list[dict]:
+    """A one-per-dir corpus's produced artifacts.
+
+    A project that writes ONE artifact per case (what the comparison reads)
+    needs no declaration.  A project whose run also writes state a chain
+    hands forward, or writes under a different name, declares it — because
+    what a program writes is a fact about that program.
+    """
+    spec = ((facts or {}).get('artifact') or {})
+    suffix = spec.get('suffix', '.out')
+    out = [{'name': '{work}/{input.stem}' + suffix, 'as': 'out'}]
+    if spec.get('state_suffix'):
+        out.append({'name': '{work}/{input.stem}' + spec['state_suffix'],
+                    'as': 'state'})
+    return out
+
+
+def _golden_place(facts: dict | None) -> tuple[str, str]:
+    """``(root_binding, suffix)`` for one golden, as the project saved it."""
+    spec = ((facts or {}).get('artifact') or {})
+    return (spec.get('golden_root', 'case_id'),
+            spec.get('golden_suffix', spec.get('suffix', '.out')))
 
 
 def _case_dir_rules(dirs) -> tuple[list[str], list[str], str]:
