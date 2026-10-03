@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protocolize"
+version = "0.1.0"
+description = "Turn any project into a build protocol + a verification protocol, each self-verified."
+requires-python = ">=3.10"
+
+# The package is importable as `protocolize`; the onboarding skill lives under
+# `skills/` and is not part of the importable package.
+[tool.setuptools]
+packages = ["protocolize", "protocolize.onboard", "protocolize.edd"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "skills/onboard-corpus/tests"]

@@ -1,0 +1,530 @@
+{
+  "_README": [
+    "THE ACCEPTANCE PLAN: how a run of this project is judged.  It is the",
+    "counterpart of `protocol-template.json` -- that one answers 'how is this",
+    "BUILT?', this one answers 'how do we know a run of it was RIGHT?' -- and",
+    "the onboarding skill produces both in the same pass.",
+    "",
+    "The skill's job is to READ the project and FILL THIS FILE IN.  Every value",
+    "below is a fact about the project, and every one of them must come from",
+    "something the project declares -- its build system, its case list, its own",
+    "benchmark script, its documentation.  None of it may be guessed from the",
+    "outputs: a date differs from a date, and at a project's own tolerance a",
+    "one-day difference can sit inside the numeric slack, so a comparison that",
+    "INFERRED its volatile lines would call it a match.",
+    "",
+    "Committed beside the protocol (gzipped, expanded on use).  One mechanism",
+    "reads it for every project: `protocolize/edd/bench_suite.py`, driven by",
+    "`python3 -m protocolize.edd.bench_cli <build_dir>`.",
+    "",
+    "WHAT MUST BE TRUE BEFORE THIS FILE IS ACCEPTED.  `VerificationPlan.problems()`",
+    "is the authority and it is not advisory -- it refuses a plan that could",
+    "produce a verdict with nothing behind it.  The three that matter most:",
+    "  * `summary.require_min` must be present and non-zero.  Without it a run",
+    "    whose results nobody could read has zero failures, zero crashes and",
+    "    zero timeouts, and reads clean.  Measured: two corpora's summaries",
+    "    parsed to zero passing cases and nobody noticed, because the verdict",
+    "    came from an exit code instead of a count.",
+    "  * a `process` run must say `inputs.from`.  The workload runs with its cwd",
+    "    in a work dir and is handed a bare input name, so a plan that does not",
+    "    say what to stage describes a run that reads nothing -- and a program",
+    "    that then falls through to a default branch reports a PASS for a run",
+    "    that read no input at all.  Measured.",
+    "  * `golden.source: none` must name a `stamp`.  Without one every origin",
+    "    counts as ready, including a half-written one left by a killed",
+    "    reference run.",
+    "",
+    "TWO SPELLINGS, and the difference is load-bearing, exactly as in the",
+    "protocol:",
+    "  * `${TREE}` -- the build tree the capture ran in.  Travels with the plan.",
+    "  * ABSOLUTE -- the project's own sources and case directories.  They do",
+    "    not move, and must not be rewritten.",
+    "`$` is reserved.  A literal dollar is `$$`; a bare `$` is refused.",
+    "",
+    "BINDINGS, usable in any path or argument below.  A `{name}` the mechanism",
+    "does not know is left ALONE rather than emptied: an unresolved binding is",
+    "a plan asking for something that does not exist, and an empty path names",
+    "nothing.  Roots: `{target}` (the thing under test), `{tree}`, `{origin}`",
+    "(the goldens), `{results}` (this run), `{work}` (this case), `{home}`",
+    "(per-run scratch), `{jobs}`.  Per case: `{case_id}` (the corpus's own",
+    "spelling), `{input.name}`, `{input.stem}`, `{deck_rel}` (a deck's relative",
+    "path, when the cases come from a list), `{deck_stem}` (the same without its",
+    "extension), and every name declared in `produced`.",
+    "",
+    "THE ORIGIN IS ONE RULE FOR EVERY PROJECT.  Run the REFERENCE instance",
+    "through this same plan and keep whatever the plan calls golden.  The",
+    "reference and the candidate therefore traverse one code path, and 'a",
+    "failed reference run captures nothing' is true by construction instead of",
+    "being a guard each project's script had to remember.",
+    "",
+    "A NOTE ON CIRCLING: `golden.source: reference_run` proves the candidate",
+    "AGREES WITH THE REFERENCE, which is STABILITY, not correctness.  A project",
+    "that ships its own reference output has an external truth -- say so in",
+    "`provenance` and encode it, rather than letting a reader assume the golden",
+    "is authoritative."
+  ],
+  "plan_version": 1,
+  "_plan_version": "The only version this consumer reads. A file from another version is refused, not coerced.",
+  "target": {
+    "_README": [
+      "WHAT is under test. Exactly two shapes, and which one applies is a fact",
+      "about the project, not a preference:",
+      "  * `product` -- a program the build produces. `product` names it, and",
+      "    the harness finds it under `<tree>/curr/bin/<product>` (or wherever",
+      "    the caller passes with `-x`).",
+      "  * `tree` -- a BUILD TREE, for a project whose acceptance is its own",
+      "    registered test suite (a library). Its registrations live where the",
+      "    build ran; the mechanism reads that directory rather than assuming.",
+      "A wrong `kind` here is not a small error: the harness used to hand every",
+      "project `<tree>/bin/<binary>`, which for a library names a path that",
+      "does not exist."
+    ],
+    "kind": "product",
+    "product": "demo"
+  },
+  "cases": {
+    "_README": [
+      "WHERE the cases come from -- the project's own declaration of its case",
+      "set. Three shapes are known, and they are told apart by what the project",
+      "HAS, never by its name:",
+      "  * `one_per_dir`     -- one directory per case, a fixed-named input",
+      "                        inside each (see `_one_per_dir`).",
+      "  * `case_list`       -- records in a file, with an INCLUDE chain and",
+      "                        per-record columns (see `_case_list`).",
+      "  * `build_system_tests` -- the build system registered them; the set is",
+      "                        already in the protocol as `protocol.tests`",
+      "                        (see `_build_system_tests`).",
+      "The value below is ONE working example; replace this whole object with",
+      "the shape the project declares. A fourth shape may be described without",
+      "changing the mechanism, which is why this section is open."
+    ],
+    "kind": "one_per_dir",
+    "root": "<absolute path to the directory holding the cases>",
+    "_root": "Absolute, or `${TREE}`-relative when the cases are generated into the tree. It is a fact read from the project, not a guess.",
+    "exclude": [
+      "Archive"
+    ],
+    "_exclude": "Directory names that are NOT cases. Omit when every directory is one.",
+    "id": {
+      "from": "dirname"
+    },
+    "_id": "How a case's id is spelled: `dirname` (the directory's name) or `stem` (the input's).",
+    "input": {
+      "name": "{stem}.inp",
+      "_name": "The input's name inside the case directory. `{stem}` is the id in the project's own spelling.",
+      "id_spelling": {
+        "lower": true,
+        "remove": "-"
+      },
+      "_id_spelling": "How the id becomes the input's stem, when they differ. MEASURED: one corpus's directory `D01-00-0A` holds `d01000a.inp`, so a plan that said `{id}.inp` discovered ZERO cases. Derive it from the project's tree, and prove it covers every directory."
+    },
+    "skip_without_input": true,
+    "_skip_without_input": "Whether a directory with no input is skipped or is an error. A project that excludes directories at all is one whose discovery requires the input.",
+    "_one_per_dir": "See the object above: `kind: one_per_dir`.",
+    "_case_list": {
+      "_README": [
+        "A case list: records in a file, optionally through an INCLUDE chain.",
+        "The RECORD LAYOUT is the project's, and it is read from the file --",
+        "which column is the deck, which is a selector, which is a reference",
+        "value and a tolerance. Use the WIDEST record: a corpus mixes asserted",
+        "and unasserted entries, and a narrow one would drop the criteria for",
+        "the whole corpus.",
+        "`deck_root` is the directory the deck paths are relative to, which is",
+        "NOT necessarily the list's own directory. MEASURED: one corpus's",
+        "`cases.txt` sits in `MYSTRAN_Validation/` while its decks live in",
+        "`MYSTRAN_Validation/decks/`."
+      ],
+      "kind": "case_list",
+      "root": "<absolute path to the directory holding the list>",
+      "deck_root": "<absolute path the deck paths are relative to>",
+      "files": [
+        "cases.txt"
+      ],
+      "include": {
+        "directive": "INCLUDE",
+        "resolve": "relative"
+      },
+      "record": {
+        "sep": ";",
+        "comment": "#",
+        "deck": {
+          "field": 1
+        },
+        "group_by": "deck",
+        "types": {
+          "field": 0,
+          "accept": [
+            "mys"
+          ]
+        }
+      }
+    },
+    "_build_system_tests": {
+      "_README": [
+        "The build system registered the cases, so there is nothing to",
+        "enumerate here: the set is `protocol.tests`, captured from the build",
+        "system's own registry (`ctest --show-only=json-v1`). A project that",
+        "registers its tests is usually SELF-VERIFYING -- it computes its own",
+        "residuals and prints its own table -- so its `golden.source` is",
+        "`none` and its verdict comes from `self_report`."
+      ],
+      "kind": "build_system_tests",
+      "tests": "protocol.tests"
+    }
+  },
+  "inputs": {
+    "_README": [
+      "What is staged into the case's work directory before it runs.",
+      "  * `input_only` -- the case's input, nothing else.",
+      "  * `case_dir`   -- every file beside it, minus `exclude_suffix`.",
+      "`case_dir` exists because a case's supporting decks and its restart",
+      "state sit BESIDE it: staging just the input produces a case that cannot",
+      "run, which then reads as a failure of the transpiler.",
+      "A `process` run MUST declare this. See the `_README` at the top."
+    ],
+    "from": "case_dir",
+    "exclude_suffix": [
+      ".out",
+      ".sof1",
+      ".txt"
+    ],
+    "_exclude_suffix": "Suffixes of files the run GENERATES, which are therefore not inputs. MEASURED: a rule rather than a fact drifts silently, so materialise it against the real directory when capturing and refuse a rule that does not match."
+  },
+  "staging": [
+    {
+      "op": "env",
+      "name": "HOME_FOR_THE_RUN",
+      "value": "{home}"
+    },
+    {
+      "op": "mkdir",
+      "path": "{home}/{case_id}/scratch"
+    },
+    {
+      "op": "symlink",
+      "link": "{home}/resources",
+      "target": "<absolute path to a resource the project ships>"
+    },
+    {
+      "op": "substitute",
+      "from": "<absolute path to a config it ships>",
+      "to": "{work}/<its name>",
+      "required": true,
+      "replace": [
+        [
+          "<literal search text>",
+          "<replacement>"
+        ]
+      ]
+    },
+    {
+      "op": "alias",
+      "in": "{work}"
+    }
+  ],
+  "run": {
+    "_README": [
+      "HOW one case (or the whole suite) is executed. Two kinds:",
+      "  * `process` -- one invocation per case. `argv` is a template.",
+      "  * `suite`   -- hand the whole set to the build system's runner in one",
+      "                 invocation. `ctest -j {jobs} -V --timeout N` is the",
+      "                 build system's own spelling, the same licence the",
+      "                 generator has to emit `add_test`.",
+      "`exit_accept` is the project's own notion of success and is often NOT",
+      "just zero: MEASURED, one program exits 2 on a legitimate outcome.",
+      "`case_timeout_s` bounds ONE case, not the suite."
+    ],
+    "kind": "process",
+    "argv": [
+      "{target}",
+      "{input.name}"
+    ],
+    "_argv": "Tokens are spelled with the bindings above. Nothing else may be hardcoded here: this field is what replaced each project's own `bench_argv`.",
+    "cwd": "{work}",
+    "_cwd": "Where the run happens. `{work}` is this case's own directory; `{target}` is the tree, for a suite.",
+    "exit_accept": [
+      0
+    ],
+    "_exit_accept": "Which exit codes mean 'the run completed'. A signal death is never acceptable and is reported as CRASHED on its own.",
+    "case_timeout_s": 300
+  },
+  "produced": [
+    {
+      "name": "{work}/{input.stem}.out",
+      "as": "out"
+    },
+    {
+      "name": "{work}/{input.stem}.sof1",
+      "as": "sof1"
+    }
+  ],
+  "_produced": {
+    "_README": [
+      "What this run WRITES, each under a name later sections refer to. The",
+      "name is the project's: MEASURED, one program writes `.F06` while its",
+      "saved goldens are `.out`, so a plan that assumed the two agree found no",
+      "artifact and reported 'no output' for all 485 cases.",
+      "An artifact nothing declares is INVISIBLE to the mechanism -- which is",
+      "how a restart chain's handover would silently have nothing to carry.",
+      "Spell them against `{work}`: a hand-written layout (e.g.",
+      "`work/{case_id}/...`) freezes the case's location at discovery time, and",
+      "a restart chain moves its prerequisites."
+    ]
+  },
+  "golden": {
+    "_README": [
+      "WHERE the thing to compare against comes from.",
+      "  * `reference_run` -- captured by running the reference through this",
+      "     same plan. Requires `root` and `path`.",
+      "  * `none`          -- the project verifies itself (it computes and",
+      "     prints its own residuals). Requires `stamp`: a file written when a",
+      "     clean reference run happened, so an origin that is absent or",
+      "     half-written is not treated as ready."
+    ],
+    "source": "reference_run",
+    "root": "{origin}",
+    "_root": "The binding the goldens live under. A LITERAL path here is refused: which tree an origin belongs to is exactly what must not be guessed.",
+    "path": "{case_id}/{input.stem}.out",
+    "_path": "One golden's location under `root`, as a template. MEASURED: when the cases come from a list the goldens MIRROR the deck's relative path (`{deck_stem}.out`), while the artifact is `{work}/{input.stem}.F06` -- the two names differ."
+  },
+  "assertions": [
+    {
+      "kind": "artifact",
+      "path": "{out}",
+      "exists": true
+    },
+    {
+      "kind": "text_lockstep",
+      "produced": "{out}",
+      "reference": "{golden}",
+      "drop": [],
+      "rtol": 0.05,
+      "atol": 0.5
+    }
+  ],
+  "chains": {
+    "_README": [
+      "Cases that must run BEFORE another, because it restarts from their",
+      "state. Both halves are required, and either alone reproduces the same",
+      "failures:",
+      "  * `order` -- which case needs which, in sequence.",
+      "  * `carry` -- which declared artifact is handed forward, and under the",
+      "               NEXT case's own name.",
+      "MEASURED: the subsystem looks for the state under the CURRENT case's",
+      "name, so state left under its old name is simply not found -- 19 of one",
+      "corpus's 132 cases, exactly the chain members.",
+      "Prerequisites and the final case share ONE work directory (that corpus's",
+      "database files must reside together), and only the FINAL case is judged:",
+      "a prerequisite's golden describes a different deck.",
+      "A project with no such dependency leaves `order` empty.",
+      "PROVENANCE MATTERS. One corpus's 19 chains could not be derived from",
+      "anything in its tree -- id succession, shipped restart state, the",
+      "project's own prose, and archive membership were each measured and none",
+      "reproduces the table -- so they travel as CATALOGUED data and say so.",
+      "Do not fit a rule to the rows you can see: it passes today and breaks on",
+      "the project's next case."
+    ],
+    "order": {},
+    "_order": "case id -> the ids that must run before it, in order.",
+    "carry": {
+      "as": "out"
+    },
+    "_carry": "Which declared artifact (a name from `produced`) is handed forward. It must be one the plan declares: a carry rule naming an artifact that does not exist hands forward nothing."
+  },
+  "report": {
+    "repeats": 1,
+    "_repeats": "How many times to run, to show the verdict is DETERMINISTIC. Report-only: it is NEVER a gate, because turning a toolchain's floating-point non-determinism into a failure manufactures false positives. Several runs are needed to STORE a metric reference -- a single reading is not a reference."
+  },
+  "summary": {
+    "_README": [
+      "The plan's own verdict. Both halves are required for a meaningful one.",
+      "`require_zero` names the verdicts that must not occur.",
+      "`require_min` is the conjunct that makes the rest mean anything: a run",
+      "whose results never reached the reader has every count at zero, so",
+      "without a floor the emptiest possible run is the greenest. A plan with",
+      "no `require_min` is REFUSED."
+    ],
+    "require_zero": [
+      "diff",
+      "crash",
+      "timeout"
+    ],
+    "require_min": {
+      "pass": 1
+    }
+  },
+  "provenance": "Say what the golden PROVES. `reference_run` proves the candidate agrees with the reference -- stability, not correctness. A project that ships its own reference output has an external truth: name it and encode it.",
+  "comment": "onboarded from <the directory this was captured from>",
+  "_staging": {
+    "_README": [
+      "The project's own preparation: what its programs need in order to RUN.",
+      "A CLOSED vocabulary -- an op the mechanism does not perform is refused,",
+      "never ignored, because a skipped preparation is a run that cannot start",
+      "and must not report a difference as if it had.",
+      "  * `env`        -- set a variable for the run.",
+      "  * `mkdir`      -- create a directory.",
+      "  * `symlink`    -- link a resource the project ships.",
+      "  * `substitute` -- copy a file the project ships, with literal",
+      "                    replacements. `required: true` (the default) means a",
+      "                    search text that is ABSENT is a hard error: the file",
+      "                    is shipped, so a mismatch is silent by nature.",
+      "  * `alias`      -- make each staged file reachable under its UPPERCASE",
+      "                    name too. Some projects open a file under a spelling",
+      "                    they do not ship (`rscards` opened as `RSCARDS`);",
+      "                    without it the run reads nothing and reports no",
+      "                    error of its own.",
+      "The `staging` array above is one op of each kind, each holding",
+      "placeholders to replace. A project that needs none declares none.",
+      "MEASURED: without one corpus's preparation its program exits 0 and",
+      "writes NOTHING, and all 132 cases report 'no output' -- which reads as a",
+      "broken transpiler, not as a missing preparation."
+    ]
+  },
+  "_assertions": {
+    "_README": [
+      "WHAT must be true of a case's outcome. An assertion kind the mechanism",
+      "does not run is REFUSED, never skipped: a skipped assertion is a",
+      "criterion nobody applied, which reads exactly like one that passed.",
+      "Kinds:",
+      "  * `artifact`        -- a declared artifact exists (set `non_empty` too",
+      "                         when an empty one must not count).",
+      "  * `text_lockstep`   -- line by line against the golden, after dropping",
+      "                         the volatile lines, with a numeric tolerance.",
+      "  * `field_assertion` -- a per-table COLUMN model: which token positions",
+      "                         of each table are physical quantities. Use this",
+      "                         when the project prints TABLES.  It is a table",
+      "                         and not a pattern list because a DERIVED column",
+      "                         (a principal-stress ANGLE) must be skipped while",
+      "                         the real stresses ON ITS ROW are still compared",
+      "                         -- 'drop the line' would stop comparing those.",
+      "  * `self_report`     -- read the project's own summary and apply ITS",
+      "                         verdict. Requires `require_min` (a floor: 5,444,421",
+      "                         checks is a magnitude, and a reader that found",
+      "                         *a* table would pass a run that did a fraction of",
+      "                         the work) and `require_zero`.",
+      "  * `metric`          -- a measured number against a stored reference.",
+      "The two arrays above are one `artifact` and one `text_lockstep`.  A",
+      "project whose output is tables replaces the second with a",
+      "`field_assertion` shaped like the one under `_field_assertion`; a project",
+      "that verifies itself uses a `self_report` like the one under",
+      "`_self_report`.",
+      "THE TOLERANCE AND THE VOLATILE-LINE LIST ARE THE PROJECT'S.  Read them",
+      "from the file that states them and pass it as `declaration=`; never",
+      "search for it, because a search that widened until it found something",
+      "would find a NEIGHBOUR's.",
+      "`drop` holds volatile-line REGEXES -- lines that legitimately differ",
+      "between two runs of the same thing (timestamps, host, elapsed).  Do not",
+      "invent them: a list widened by hand drops lines the project never said",
+      "were volatile, which is a comparison that accepts a difference.",
+      "`rtol`/`atol` are how much numeric slack the project's PHYSICS allows.",
+      "They are two real measurements, not one default copied everywhere."
+    ],
+    "_field_assertion": {
+      "kind": "field_assertion",
+      "produced": "{out}",
+      "reference": "{golden}",
+      "drop": [],
+      "rtol": 0.05,
+      "model": {
+        "_README": [
+          "Which token positions of each table are PHYSICAL QUANTITIES.",
+          "`titles` are the table's own headings with all whitespace removed, as",
+          "the project prints them (a project that spaces a title out letter by",
+          "letter is matched unspaced).",
+          "Each row rule names the SHAPE it applies to -- `first_eq`, `first_int`,",
+          "`second_int`, `n_tokens` -- and the `fields` it reads.  A row matching",
+          "no rule is still COMPARED, by the ordinary numeric comparison:",
+          "treating it as 'not declared, therefore not judged' would turn every",
+          "shape the model forgot into a region nobody checks.",
+          "`near_zero` is the magnitude below which a component is a THEORETICAL",
+          "ZERO whose relative error is meaningless (a free-expansion thermal",
+          "deck is full of them): such a component is compared absolutely, while",
+          "a real magnitude is still held to `rtol`.",
+          "`by_elemtype` gives some element types their own row shapes and every",
+          "other type the `''` DEFAULT."
+        ],
+        "near_zero": 0.001,
+        "elemtype_line": "\\\\bF O R E L E M E N T T Y P E (.+)",
+        "tables": [
+          {
+            "titles": [
+              "<THE TABLE TITLE, WHITESPACE REMOVED>"
+            ],
+            "rows": [
+              {
+                "match": {
+                  "first_int": true,
+                  "second_int": true
+                },
+                "min_tokens": 8,
+                "fields": {
+                  "slice": [
+                    2,
+                    8
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "titles": [
+              "<ANOTHER TABLE>"
+            ],
+            "by_elemtype": {
+              "<ELEMENT TYPE WITH ITS OWN SHAPE>": [
+                {
+                  "match": {
+                    "first_eq": "<A LABEL>",
+                    "min_tokens": 10
+                  },
+                  "fields": {
+                    "indices": [
+                      3,
+                      4,
+                      5,
+                      7,
+                      8,
+                      9
+                    ]
+                  }
+                }
+              ],
+              "": [
+                {
+                  "match": {
+                    "first_float": true,
+                    "n_tokens": 8
+                  },
+                  "fields": {
+                    "indices": [
+                      1,
+                      2,
+                      3,
+                      5,
+                      6,
+                      7
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "_self_report": {
+      "kind": "self_report",
+      "in": "suite_stdout",
+      "section_pattern": "^-+\\s*(SECTION)\\b.*$",
+      "_section_pattern": "The project's own section headings, so the counts are attributed to the right section. A heading that does not match ENDS attribution, rather than letting one section's totals be summed into another's.",
+      "require_min": {
+        "run": 1
+      },
+      "_require_min": "The floor. Measured: one suite reports 5,444,421 checks in one section and 315,872 in another, and a reader that found *a* table would pass a run that did a fraction of the work.",
+      "require_zero": [
+        "numerr",
+        "otherr"
+      ]
+    }
+  }
+}

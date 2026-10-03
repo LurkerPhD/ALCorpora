@@ -1,0 +1,202 @@
+{
+  "_README": [
+    "The private protocol: a compile database SUPERSET. It is the ONE artifact the",
+    "onboarding skill produces, and the only thing the flow reads about a project's",
+    "build. The skill's job is to FILL THIS TEMPLATE IN: everything the shape can",
+    "express is here; the skill supplies the corpus's values.",
+    "",
+    "WHY A SUPERSET. A compile database says how each translation unit is compiled",
+    "and nothing else: not which units link into which product, not which module a",
+    "unit defines, not which sources the build has to GENERATE first, not how the",
+    "project is PATCHED, OVERLAID or CONFIGURED before it can build at all. Without",
+    "these a build cannot be produced from the file. So they are recorded here,",
+    "once, by the skill that had the real build in front of it.",
+    "",
+    "EVERY SECTION IS ALWAYS PRESENT. A section with nothing to say is `[]` (or an",
+    "object with empty fields), never omitted: the shape is the contract, and a",
+    "section that appears only when a corpus happens to use it makes two corpora",
+    "produce two different shapes for the same kind of fact -- a consumer cannot",
+    "tell 'this corpus has none' from 'this reader did not look'.",
+    "",
+    "TWO SPELLINGS OF A PATH, load-bearing:",
+    "  * a path UNDER `${TREE}` is one the replay must MAKE for itself (generated",
+    "    sources, objects) -- it travels with the protocol;",
+    "  * a path that is ABSOLUTE is one the replay READS (the project's own sources",
+    "    do not move) -- it does not travel and must not be rewritten.",
+    "`$` is reserved: a literal dollar is `$$`; a bare `$` is malformed and refused.",
+    "",
+    "THE KEY IS THE STEM, not a file name: removing ONE trailing extension and",
+    "keeping case is what makes `isamax.f` and `isamax.cpp` one unit and one link",
+    "member."
+  ],
+  "protocol_version": 1,
+  "_protocol_version": "The only version this consumer reads. A file from another version is refused, not coerced.",
+
+  "comment": "onboarded from /path/to/build/tree",
+  "_comment": "Free text. Says where this came from, for a human reading it later.",
+
+  "capture": {
+    "_README": [
+      "WHERE the protocol was captured from, and what that tree IS. The onboard",
+      "skill observes this from the build; it is not derived later, because a",
+      "wrong guess resolves `${TREE}` to the wrong directory and every generated",
+      "source then names a file that does not exist."
+    ],
+    "tree": "/path/to/the/tree/it/was/captured/from",
+    "_tree": "What `${TREE}` denotes for this protocol -- the tree the build RAN in. For an out-of-source build that is the build directory (`.../build`), not the source checkout beside it; the two differ by a level and the difference silently changes where every generated source lands.",
+    "layout": "in_source",
+    "_layout": "'in_source' or 'out_of_source'. Whether the build ran IN the corpus's source tree or in a separate build directory. Recorded so a consumer reproduces the same tree, not a similar one."
+  },
+
+  "compilation": [
+    {
+      "_README": [
+        "One entry per translation unit. The first four fields are the standard",
+        "compile-database fields, unchanged, so a cc-only consumer works. This",
+        "example defines BOTH stems the `products` below reference, so the",
+        "template is a protocol the mechanism accepts."
+      ],
+      "directory": "${TREE}/build",
+      "_directory": "The directory the command ran in. Relative path operands in `command` are relative to THIS.",
+      "command": "/usr/bin/gfortran -O2 -J${TREE}/SRC -fPIC -c ${TREE}/SRC/isamax.f -o SRC/CMakeFiles/x.dir/isamax.f.o",
+      "_command": "EXACTLY what the project's own build ran, re-rooted at `${TREE}`. This is the authority on the unit's flags.",
+      "file": "${TREE}/SRC/isamax.f",
+      "_file": "The unit's source. Under `${TREE}` when the build GENERATED it; absolute when the project ships it.",
+      "output": "SRC/CMakeFiles/x.dir/isamax.f.o",
+      "_output": "The object the command produces, as the build spelled it.",
+      "stem": "SRC/isamax",
+      "_stem": "The unit's extension-independent identity, and the protocol's KEY. A product's members are stems.",
+      "variant": "fortran",
+      "_variant": "'fortran' or 'cpp' -- which form of this stem this entry describes.",
+      "provides": ["la_constants"],
+      "_provides": "Fortran modules this unit DEFINES, lowercased. Omitted when empty (still a valid entry).",
+      "uses": ["la_constants"],
+      "_uses": "Fortran modules this unit USES, lowercased. Omitted when empty.",
+      "preprocess": "/usr/bin/gfortran -cpp -DFOO=1 -E ${TREE}/SRC/isamax.f -o SRC/x.dir/isamax.f-pp.f",
+      "_preprocess": "The PREPROCESS step, when the build has one. DEFINES go here and only here. Omitted when the build has no separate preprocess step."
+    },
+    {
+      "directory": "${TREE}/build",
+      "command": "/usr/bin/gfortran -O2 -c ${TREE}/SRC/sasum.f -o SRC/CMakeFiles/x.dir/sasum.f.o",
+      "file": "${TREE}/SRC/sasum.f",
+      "output": "SRC/CMakeFiles/x.dir/sasum.f.o",
+      "stem": "SRC/sasum",
+      "variant": "fortran"
+    }
+  ],
+
+  "generated_inputs": [
+    {
+      "_README": [
+        "Sources the build MAKES before it can compile anything. A replay that",
+        "names one without a rule to produce it fails on one missing file among",
+        "thousands. Empty `[]` when the build generates nothing."
+      ],
+      "output": "${TREE}/BLAS/SRC/blas_64_sources/caxpby_64.f",
+      "_output": "The file this rule produces. Under `${TREE}`, always.",
+      "command": "cd ${TREE}/BLAS/SRC && /usr/bin/cmake -DINPUT_FILE=/abs/caxpby.f -DOUTPUT_FILE=${TREE}/BLAS/SRC/blas_64_sources/caxpby_64.f -P /abs/GenerateSuffixedSource.cmake",
+      "_command": "A SHELL LINE, not an argv list. Run it through a shell; do not split or re-quote it.",
+      "depends": ["/abs/caxpby.f", "/abs/GenerateSuffixedSource.cmake"],
+      "_depends": "What must exist to run the rule, in the build's own order."
+    }
+  ],
+
+  "products": [
+    {
+      "_README": [
+        "What the build links. Members/objects are STEMS defined in `compilation`,",
+        "so the link line follows a unit from one form to the other."
+      ],
+      "output": "${TREE}/lib/libblas.a",
+      "kind": "archive",
+      "_kind": "'exe' or 'archive'.",
+      "members": ["SRC/isamax", "SRC/sasum"],
+      "_members": "For an 'archive': the STEMS that go into it."
+    },
+    {
+      "output": "${TREE}/bin/xlintstc",
+      "kind": "exe",
+      "objects": ["SRC/isamax", "SRC/sasum"],
+      "_objects": "For an 'exe': the STEMS of its own translation units.",
+      "libs": ["${TREE}/lib/libblas.a"],
+      "_libs": "For an 'exe': libraries it links, IN ORDER (`ld` resolves left to right).",
+      "driver": "gfortran",
+      "_driver": "The command used to link. Omitted when the build's own link line is not needed.",
+      "flags": ["-O2"],
+      "_flags": "Link-time flags, when the recorded link line had any. Omitted when empty."
+    }
+  ],
+
+  "own_roots": [],
+  "_own_roots": "The directories (tree-relative) that are the corpus's OWN units, when its build pulls in third-party subprojects it should NOT convert. Empty `[]` means every compiled unit is the corpus's own.",
+
+
+  "prepare": [
+    {
+      "_README": [
+        "Infrastructure the corpus needs ONCE, for the repeated builds and runs",
+        "that follow: a `git submodule` fetch, a portability patch, an overlay",
+        "copy, a configure step. Each entry carries a CHECK -- the corpus's own",
+        "way of telling it is already done -- so it runs AT MOST ONCE and a",
+        "repeat is a no-op ('the submodule is already there, do not re-fetch').",
+        "That is what lets a rebuild start from a raw checkout without paying",
+        "for the setup every time. Empty `[]` when the corpus needs none."
+      ],
+      "op": "submodule",
+      "_op": "'submodule' | 'patch' | 'copy' | 'configure'.",
+      "check": {"path": "submodules/vendor-lib"},
+      "_check": "How to know this is ALREADY done, as a predicate over the tree. A `path` that must EXIST (with `exists: true`, the default) or must be ABSENT (`exists: false`, e.g. a marker a patch writes). When it holds, the step is SKIPPED.",
+      "run": "git submodule update --init submodules/vendor-lib",
+      "_run": "The command to run when the check does not hold. A shell line."
+    }
+  ],
+
+  "build": {
+    "_README": [
+      "Build facts a compile database cannot carry: which optimization level the",
+      "CONVERTED C++ is built at (which can differ from the source's), the policy",
+      "flags every unit gets, and the extra include/module directories the build",
+      "exports."
+    ],
+    "flags": {
+      "optimize": {"-O2": "-O3"},
+      "_optimize": "A map from the SOURCE command's optimization token to the one the CONVERTED code must use. Empty `{}` keeps the source's level. A corpus whose own CMake lowers its Fortran from -O3 to -O2 needs this; one that does not leaves it empty.",
+      "policy": ["-falign-functions=64"],
+      "_policy": "Flags applied to every unit, independent of the recorded command."
+    },
+    "module_dirs": [],
+    "_module_dirs": "Tree-relative directories the build writes Fortran `.mod` files into. Empty when the corpus declares none.",
+    "include_dirs": [],
+    "_include_dirs": "Tree-relative include directories the build exports. Empty when none."
+  },
+
+  "tests": [
+    {
+      "_README": [
+        "Tests the build system REGISTERED, as the build system itself reports",
+        "them. Empty `[]` when the project registers none; a corpus with a",
+        "registered suite is self-verifying and needs no stored golden."
+      ],
+      "name": "Suite_Summary",
+      "command": ["python3", "run_tests.py", "--fail-if-empty"],
+      "depends": ["group-a", "group-b"],
+      "_depends": "The registered test names this one runs after, in the build's order.",
+      "working_directory": "${TREE}/build",
+      "_working_directory": "Where the test command runs, when the build says so. Omitted when it runs at the build root."
+    }
+  ],
+
+  "support_files": [
+    {
+      "_README": [
+        "Files a run READS that are not sources and not generated -- a validation",
+        "input template, a resource. Recorded because a replay outside the capture",
+        "tree would otherwise look for them and not find them. Empty `[]` when none."
+      ],
+      "path": "BLAS/TESTING/cblat2_64.in",
+      "_path": "Tree-relative path of the file.",
+      "content": "text of the file",
+      "_content": "The file's contents, so the replay can recreate it."
+    }
+  ]
+}
