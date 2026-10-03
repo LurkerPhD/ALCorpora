@@ -124,12 +124,14 @@ def test_the_compiled_include_dirs_are_real_directories(replay):
     fresh, build, _text, _r = replay
     obj = next(p for p in fresh.rglob('*.o') if 'main' in p.name)
     cmd = _compile_command(build, obj)
-    # The command is replayed VERBATIM, wrapped in `sh -c "..."`, so the
-    # compile line is the inner payload: split once for the wrapper, once for
-    # the compiler.
+    # The command is replayed VERBATIM.  It is delivered as separate arguments
+    # when it is a plain command, and through a shell when it carries shell
+    # syntax — so unwrap only if a shell is actually there.  (The one-argument
+    # delivery this used to assume is what died on a large link line.)
     argv = shlex.split(cmd)
-    payload = argv[argv.index('-c') + 1] if '-c' in argv else cmd
-    actual = [a[2:] for a in shlex.split(payload) if a.startswith('-I')]
+    if len(argv) >= 3 and argv[0].endswith('sh') and argv[1] == '-c':
+        argv = shlex.split(argv[2])
+    actual = [a[2:] for a in argv if a.startswith('-I')]
     assert actual, f'no include path reached the compiler: {cmd}'
     for d in actual:
         assert Path(d).is_dir(), (

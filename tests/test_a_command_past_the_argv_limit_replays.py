@@ -1,32 +1,35 @@
-"""A command too long to be an argv is still replayed — through a script file.
+"""A long recorded command is delivered as argv, never packed into one argument.
 
-A single execve ARGUMENT may not exceed Linux's ``MAX_ARG_STRLEN`` (131072).
-The flat build delivered every recorded command as ONE argument
-(``sh -c "<command>"``), so a command past that length could not be run at all:
-execve fails with E2BIG before the shell starts.  Measured on this machine:
-``sh -c`` with 65,536 bytes runs; at 131,071 it does not.
+A single execve ARGUMENT may not exceed Linux's ``MAX_ARG_STRLEN`` (131072),
+and the limit is PER ARGUMENT.  The flat build used to hand every recorded
+command to a shell as ONE argument (``sh -c "<command>"``), so a command past
+that length could not run at all: execve fails with E2BIG before the shell
+starts.  Measured: ``sh -c`` with 65,536 bytes runs; at 131,071 it does not.
 
-This is not avoidable by a big project.  A link line grows with the number of
-units, and one real corpus's executable link is 244,887 bytes once every object
-is spelled absolutely — while the SAME build's own ninja line is 126,616 bytes,
-just under the limit, because it names objects RELATIVELY.  So the project
-builds and its replay does not, and the failure reads as "the protocol does not
-rebuild the project".
+A big project reaches that.  Measured on a real corpus: its 1,965-object link
+line is 126,616 bytes and its OWN build runs it through ``sh -c`` — four
+thousand bytes under the wall, and only because that build spells its objects
+RELATIVELY.  Spell the same objects under ``${TREE}`` and the line grows by
+~20KB and dies.
 
-The fix changes only HOW the shell is reached: a short command still goes in as
-an argument, an oversized one is written to a file and run with ``sh <file>``.
-Nothing is parsed, split or re-quoted, so the replay stays VERBATIM.
+The fix is not to shorten the spelling and not to hand the shell a file: it is
+to stop PACKING the command into one argument.  A command delivered as separate
+argv entries is bounded only by the TOTAL (about 2MB here) — which is exactly
+what the native build does, and why the native build survives its own line.
+Measured, above the per-argument limit:
 
-An earlier version of this test padded the command with repeated ``-D`` flags
-and failed even after the fix — ``gcc`` re-execs ``collect2`` and dies on the
-same class of limit for that shape.  That was the TEST's shape being wrong, not
-the fix: measured, the real shape (many short object paths totalling ~1 MB)
-runs fine through a script file.  The fixture below therefore uses the real
-shape.
+    command ~152KB, one `sh -c` string  ->  E2BIG
+    command ~152KB, separate arguments  ->  delivered
+    command ~253KB, separate arguments  ->  delivered
+
+So this file pins the DELIVERY, by running a generated build whose command is
+past the limit, and asserting the command REACHES the toolchain instead of
+dying at execve.
 """
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -38,39 +41,33 @@ from protocolize.private_protocol import TREE, CompileEntry, Product, Protocol
 pytestmark = pytest.mark.skipif(
     not Path('/bin/sh').exists(), reason='needs a POSIX shell')
 
-#: Past MAX_ARG_STRLEN (131072) with margin, so the delivery choice is
-#: unambiguous rather than sitting on the boundary.
+#: Well past MAX_ARG_STRLEN (131072), so the delivery choice is unambiguous.
 _TOO_LONG = 200_000
 
-#: The real shape: distinct object paths, as a large link names them.  The
-#: padding is computed from the ACTUAL spelling, not an estimate of it.
-_PAD_OBJ = 'obj/{i:05d}/a_rather_long_object_name_for_this_unit.o'
+_PAD = 'obj/{i:05d}/a_rather_long_object_name_for_this_unit.o'
 
 
-def link_of(objs: list[str]) -> str:
+def _link(objs: list[str]) -> str:
     return f'gcc -o {TREE}/app ' + ' '.join(objs)
 
 
 def _protocol(*, long: bool) -> Protocol:
-    """A link command of the REAL shape, long or short."""
-    units = 2
     entries = [
         CompileEntry(directory=TREE, command=f'gcc -c -o u{i}.o {TREE}/u{i}.c',
                      file=f'{TREE}/u{i}.c', output=f'u{i}.o',
                      stem=f'u{i}', language='c')
-        for i in range(units)
+        for i in range(2)
     ]
-    objs = [f'u{i}.o' for i in range(units)]
+    objs = ['u0.o', 'u1.o']
     if long:
-        one = _PAD_OBJ.format(i=0)
-        need = (_TOO_LONG - len(link_of(objs))) // (len(one) + 1)
-        objs += [_PAD_OBJ.format(i=i) for i in range(need)]
-    link = link_of(objs)
+        one = _PAD.format(i=0)
+        need = (_TOO_LONG - len(_link(objs))) // (len(one) + 1)
+        objs += [_PAD.format(i=i) for i in range(need)]
     return Protocol(
         compilation=entries,
         products=[Product(output=f'{TREE}/app', kind='exe',
-                          stems=tuple(f'u{i}' for i in range(units)),
-                          command=link, directory=TREE)],
+                          stems=('u0', 'u1'),
+                          command=_link(objs), directory=TREE)],
         comment='argv-limit fixture')
 
 
@@ -89,8 +86,7 @@ def _build(tree: Path) -> subprocess.CompletedProcess:
                           capture_output=True, text=True)
 
 
-def test_a_link_command_past_the_argv_limit_is_delivered(tmp_path: Path):
-    """The command REACHES the toolchain instead of dying at execve."""
+def test_a_long_command_reaches_the_toolchain(tmp_path: Path):
     tree = _tree(tmp_path / 'tree')
     proto = _protocol(long=True)
     assert len(proto.products[0].command) > 131_072, (
@@ -100,42 +96,50 @@ def test_a_link_command_past_the_argv_limit_is_delivered(tmp_path: Path):
     r = _build(tree)
     combined = r.stdout + r.stderr
 
-    # The link may fail because the padding objects do not exist — that is
-    # not what this test is about.  What must NOT happen is the command being
+    # The link may fail because the padding objects do not exist — that is not
+    # what this test is about.  What must NOT happen is the command being
     # undeliverable.
     assert 'Argument list too long' not in combined, combined
     assert 'cannot execute' not in combined, combined
 
-    scripts = sorted((tree / '_replay_cmds').glob('*.sh'))
-    assert scripts, 'an oversized command must be written to a script'
 
-
-def test_the_script_carries_the_recorded_command_verbatim(tmp_path: Path):
-    """Delivered through a file, the TEXT is the same — no re-quoting."""
+def test_a_long_command_is_not_a_single_shell_argument(tmp_path: Path):
+    """The command is emitted as argv, so no argument can hit the per-item cap."""
     tree = _tree(tmp_path / 'tree')
     proto = _protocol(long=True)
     flat_cmake(proto, tree=tree)
 
-    scripts = sorted((tree / '_replay_cmds').glob('*.sh'))
-    written = scripts[0].read_text()
-    expected = proto.products[0].command.replace(TREE, str(tree))
-    assert expected in written, (
-        'the recorded command must appear verbatim, not re-quoted or split')
+    text = (tree / 'CMakeLists.txt').read_text()
+    # Find the link rule's COMMAND line and measure its largest argument.
+    lines = [ln for ln in text.splitlines()
+             if 'a_rather_long_object_name' in ln and ln.strip().startswith('COMMAND')]
+    assert lines, 'the link command should be emitted as COMMAND'
+    for ln in lines:
+        argv = shlex.split(ln.strip()[len('COMMAND'):])
+        biggest = max((len(a) for a in argv), default=0)
+        assert biggest < 131_072, (
+            f'an argument of {biggest} bytes would fail execve')
+        assert len(argv) > 100, 'the objects should be SEPARATE arguments'
 
 
-def test_a_short_command_is_still_one_argument(tmp_path: Path):
-    """The fix must not change how an ordinary command is delivered."""
+def test_a_shell_line_keeps_its_shell(tmp_path: Path):
+    """A command with shell syntax still goes through a shell."""
     tree = _tree(tmp_path / 'tree')
     proto = _protocol(long=False)
+    prod = proto.products[0]
+    proto = type(proto)(compilation=proto.compilation, products=[
+        type(prod)(output=prod.output, kind=prod.kind, stems=prod.stems,
+                   command=f'cd {TREE} && gcc -o {TREE}/app u0.o u1.o '
+                           f'&& echo done',
+                   directory=TREE)], comment='')
     flat_cmake(proto, tree=tree)
     text = (tree / 'CMakeLists.txt').read_text()
-    assert 'sh -c "' in text, 'a short command should stay an -c argument'
-    assert not (tree / '_replay_cmds').exists(), (
-        'no script file is needed for a command that fits')
+    assert 'sh -c "' in text, (
+        'a command carrying `&&` must keep its shell, or the operators become '
+        'arguments to the first program')
 
 
-def test_a_short_command_still_builds(tmp_path: Path):
-    """The end-to-end path is unchanged for the ordinary case."""
+def test_a_plain_command_still_builds(tmp_path: Path):
     tree = _tree(tmp_path / 'tree')
     flat_cmake(_protocol(long=False), tree=tree)
     r = _build(tree)

@@ -86,25 +86,16 @@ def flat_cmake(protocol: Protocol, *, tree: str | Path,
     wrong in a way that surfaces as a missing header deep in a build.
     """
     tree_s = str(tree)
-    scripts: dict[str, str] = {}
     text = _render(protocol, select(protocol), tree_s,
-                   list(extra_includes), list(extra_links), scripts)
+                   list(extra_includes), list(extra_links))
     out = Path(tree) / name
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding='utf-8')
-    # The commands too long to be an argument, written out to be RUN.  They
-    # live beside the CMakeLists rather than in a scratch directory because
-    # the generated build is self-contained: everything it runs, it carries.
-    for rel, body in scripts.items():
-        f = Path(tree) / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(body, encoding='utf-8')
     return str(out)
 
 
 def _render(protocol: Protocol, selection: Selection, tree: str,
-            extra_includes: list[str], extra_links: list[str],
-            scripts: dict[str, str]) -> str:
+            extra_includes: list[str], extra_links: list[str]) -> str:
     lines: list[str] = [_HEADER, '']
     has_fortran = _has_fortran(selection)
     if not has_fortran:
@@ -175,8 +166,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
             parent = str(Path(out).parent)
             lines.append(f'  COMMAND "${{CMAKE_COMMAND}}" -E make_directory '
                          f'"{_cmake_string(parent)}"')
-            lines.append(_command_line(command, tree, _script_index(out),
-                                       scripts))
+            lines.append(_command_line(command))
             for dep in depends:
                 lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
             lines.append('  VERBATIM)')
@@ -225,8 +215,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
                          f'"{_cmake_string(cwd)}"')
             lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                          f'"{_cmake_string(str(Path(pp).parent))}"')
-            lines.append(_command_line(_expand(e.preprocess, tree), tree,
-                                       f'{_script_index(stem)}-pp', scripts))
+            lines.append(_command_line(_expand(e.preprocess, tree)))
             lines.append(f'  DEPENDS "{_cmake_string(_expand(e.file, tree))}"')
             lines.append('  VERBATIM)')
             deps = [pp] + deps
@@ -235,8 +224,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
                      f'"{_cmake_string(cwd)}"')
         lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                      f'"{_cmake_string(str(Path(out).parent))}"')
-        lines.append(_command_line(_expand(e.command_line(), tree), tree,
-                                   _script_index(stem), scripts))
+        lines.append(_command_line(_expand(e.command_line(), tree)))
         for dep in dict.fromkeys(deps):
             lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
         lines.append('  VERBATIM)')
@@ -264,8 +252,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                      f'"{_cmake_string(str(Path(out).parent))}"')
         if prod.command:
-            lines.append(_command_line(_expand(prod.command, tree), tree,
-                                       _script_index(str(i)), scripts))
+            lines.append(_command_line(_expand(prod.command, tree)))
         for dep in dict.fromkeys(deps):
             lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
         lines.append('  VERBATIM)')
@@ -523,51 +510,71 @@ def _shell_arg(command: str) -> str:
 
 
 #: A single execve ARGUMENT may not exceed Linux's ``MAX_ARG_STRLEN``
-#: (131072), and the limit is PER ARGUMENT, not on the total.  Measured on the
-#: same kernel: ``sh -c`` with a 65536-byte argument runs; at 131071 bytes
-#: execve itself fails with E2BIG, before the shell starts.
+#: (131072), and the limit is PER ARGUMENT — not on the total.  Measured:
+#: ``sh -c`` with a 65,536-byte argument runs; at 131,071 execve itself fails
+#: with E2BIG, before the shell starts.
 #:
-#: A big project cannot avoid this.  A link line grows with the number of
-#: units, and one real corpus's executable link is 244,887 bytes once every
-#: object is spelled absolutely -- while the SAME build's own ninja line is
-#: 126,616 bytes, just under the limit, because it names objects RELATIVELY.
-#: So the project builds and its replay does not, and the failure reads as
-#: "the protocol does not rebuild the project".
+#: This matters because a link line grows with the unit count.  Measured on a
+#: real corpus: its 1,965-object link is 126,616 bytes and its own build
+#: system runs it through ``sh -c`` — four thousand bytes under the wall, and
+#: only because that build spells its objects RELATIVELY.  Spell the same
+#: objects under ``${TREE}`` and the line grows by ~20KB and dies.
 #:
-#: The margin is deliberate: the recorded command is one argument among
-#: several, and the limit applies to each of them.
-_LONG_COMMAND = 100_000
+#: The fix is NOT to shorten anything, and not to hand the shell a file: it is
+#: to stop PACKING the command into one argument.  A command passed as
+#: separate argv entries is limited only by the total (about 2MB here), which
+#: is what the native build does and why it survives.  Measured: a 253KB
+#: command delivered as separate arguments runs; the same command as one
+#: ``sh -c`` string fails with E2BIG.
+_SHELL_OPERATORS = frozenset({'&&', '||', ';', '|', '&', '>', '>>', '<',
+                              '2>', '2>>', '<<', '<<<'})
 
-#: Where oversized commands are written, relative to the tree the flat build
-#: is generated into.
-_SCRIPT_DIR = '_replay_cmds'
 
+def _command_argv(command: str) -> list[str] | None:
+    """*command* as argv, or ``None`` when it genuinely needs a shell.
 
-def _command_line(command: str, tree: str, idx: str,
-                  scripts: dict[str, str]) -> str:
-    """The CMake ``COMMAND`` line that runs *command*.
+    A command with shell OPERATORS (`a && b`, a redirect) must go through a
+    shell, and is emitted as ``sh -c`` — those commands are short (a
+    generated source, a chained generator), so the one-argument limit is not
+    in play.
 
-    A shell line is delivered the same way either way — this chooses HOW, not
-    what.  A short command goes in as an argument (``sh -c "<cmd>"``); an
-    oversized one is written to a file and run as ``sh <file>``, which is the
-    same shell reading the same text, minus the argument-length limit.
+    A plain command has no operators and no need for a shell, and emitting it
+    as separate arguments is strictly better: the shell would have done
+    nothing but exec it.
 
-    Nothing is parsed, split or re-quoted to do this, so the replay stays
-    verbatim: the recorded command is still the thing that runs.
+    The one shell-idiosyncratic token stripped here is a LEADING or TRAILING
+    ``:`` (the shell's own no-op, which build systems wrap a command in to
+    keep its exit status — `: && X && :` means exactly `X`).  A ``:`` in the
+    middle is left alone, because there it would be a real command.
     """
-    if len(command) <= _LONG_COMMAND:
+    try:
+        toks = shlex.split(command)
+    except ValueError:
+        return None
+    if not toks:
+        return None
+    while toks and toks[0] in (':', '&&', '||'):
+        toks = toks[1:]
+    while toks and toks[-1] in (':', '&&', '||'):
+        toks = toks[:-1]
+    if not toks:
+        return None
+    if any(t in _SHELL_OPERATORS for t in toks):
+        return None                  # a real shell line: keep the shell
+    return toks
+
+
+def _command_line(command: str) -> str:
+    """The CMake ``COMMAND`` line(s) that run *command*.
+
+    One command, delivered the way that keeps it runnable at any size: as
+    separate arguments when it is a plain command, through a shell when it
+    carries shell syntax.  Nothing about the command is re-derived.
+    """
+    argv = _command_argv(command)
+    if argv is None:
         return f'  COMMAND sh -c "{_shell_arg(command)}"'
-    rel = f'{_SCRIPT_DIR}/{idx}.sh'
-    scripts[rel] = command + '\n'
-    return f'  COMMAND sh "{_cmake_string(str(Path(tree) / rel))}"'
-
-
-def _script_index(text: str) -> str:
-    """A filename-safe spelling of *text*, for a generated script's name."""
-    safe = ''.join(c if (c.isalnum() or c in '-_.') else '_' for c in text)
-    return safe[:120] or 'cmd'
-
-
+    return '  COMMAND ' + ' '.join(f'"{_cmake_string(a)}"' for a in argv)
 def _cmake_list(items: 'Iterable[str]') -> str:
     """*items* as one CMake list value.
 
