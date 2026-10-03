@@ -34,9 +34,9 @@ if str(REPO) not in sys.path:
 
 BENCH = REPO / 'benchmark'
 BENCH_CSV = BENCH / 'benchmark.csv'
-CSV_COLUMNS = ('number', 'name', 'language', 'build_system', 'native',
-               'build_protocol_a', 'verify_on_project_b', 'verify_on_replay_b',
-               'status', 'notes')
+CSV_COLUMNS = ('number', 'name', 'language', 'build_system', 'verification',
+               'native', 'build_protocol_a', 'verify_on_project_b',
+               'verify_on_replay_b', 'status', 'notes')
 
 
 def record_row(number: int, name: str, **values) -> None:
@@ -237,12 +237,27 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
     return 0
 
 
+#: Directories a benchmark folder holds that are OUTPUT, not the checkout.
+_OUTPUT_DIRS = frozenset({'origin_release', '.work', 'results', 'build',
+                          'benchmark_results'})
+
+
 def _inner_source(dest: Path) -> Path:
-    """The project's own checkout inside a benchmark directory."""
-    skip = {'origin_release', '.work', 'results', 'build'}
-    for d in sorted(dest.iterdir()):
-        if d.is_dir() and d.name not in skip and not d.name.startswith('.'):
+    """The project's own checkout inside a benchmark directory.
+
+    Chosen by what it HOLDS — a build system — rather than by name, so an
+    output directory a run left behind (`benchmark_results/`) is not mistaken
+    for the source.
+    """
+    dirs = [d for d in sorted(dest.iterdir())
+            if d.is_dir() and not d.name.startswith('.')
+            and d.name not in _OUTPUT_DIRS]
+    for d in dirs:
+        if (d / 'CMakeLists.txt').is_file() or (d / 'Makefile').is_file() \
+                or (d / 'configure').exists():
             return d
+    if dirs:
+        return dirs[0]
     raise FetchError(f'{dest} holds no source checkout')
 
 
