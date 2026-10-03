@@ -119,19 +119,24 @@ def fetch(source: str, dest: Path, *, retries: int = 3) -> None:
     shutil.copytree(source, dest, symlinks=True)
 
 
-def run(argv: list[str], cwd: Path) -> tuple[bool, str]:
-    r = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True)
+def run(shell_line: str, cwd: Path) -> tuple[bool, str]:
+    """Run a native command. A SHELL line, not an argv: a project's build is
+    sometimes several commands (`make -C a && make -C b`), and describing it
+    should not need a scripting layer."""
+    r = subprocess.run(shell_line, shell=True, cwd=str(cwd),
+                       capture_output=True, text=True)
     return r.returncode == 0, (r.stdout or '') + (r.stderr or '')
 
 
 def native(src: Path, args) -> tuple[bool, str]:
     """Build and test the project the way IT builds — step 1 and 2."""
     log = ''
-    for argv in (args.configure, args.build, args.test):
-        if not argv:
+    for line in (args.configure, args.build, args.test):
+        if not line:
             continue
-        ok, out = run([a.format(src=src) for a in argv], cwd=src)
-        log += f'$ {" ".join(argv)}\n{out[-2000:]}\n'
+        cmd = line.replace('{src}', str(src))
+        ok, out = run(cmd, cwd=src)
+        log += f'$ {cmd}\n{out[-2000:]}\n'
         if not ok:
             return False, log
     return True, log
@@ -154,17 +159,13 @@ def main(argv=None) -> int:
                    help='the project name (default: the source basename)')
     p.add_argument('--configure', default='cmake -S {src} -B {src}/build -G Ninja',
                    help='the native CONFIGURE command (default: CMake+Ninja)')
-    p.add_argument('--build', default='cmake --build {src}/build -j',
+    p.add_argument('--build', default='cmake --build {src}/build',
                    help='the native BUILD command')
     p.add_argument('--test', default='ctest --test-dir {src}/build',
                    help='the native VERIFY command')
     p.add_argument('--tree-subdir', default='build',
                    help='the build directory, relative to the source')
     args = p.parse_args(argv)
-    # Split the command strings into argv, once.
-    for k in ('configure', 'build', 'test'):
-        v = getattr(args, k)
-        setattr(args, k, v.split() if v else [])
 
     src_name = args.name or Path(args.source.rstrip('/')).stem
     src_name = src_name[:-4] if src_name.endswith('.git') else src_name

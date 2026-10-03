@@ -208,7 +208,8 @@ def self_check(protocol: Protocol, *, tree: Path | str,
     build.mkdir(parents=True, exist_ok=True)
     for argv in (
         ['cmake', '-S', str(scratch), '-B', str(build), '-G', 'Ninja'],
-        ['cmake', '--build', str(build), '-j', str(jobs)],
+        ['cmake', '--build', str(build)],   # no -j: the generator
+                                             # picks its own width
     ):
         r = subprocess.run(argv, capture_output=True, text=True)
         report.build_output = (report.build_output + '\n' +
