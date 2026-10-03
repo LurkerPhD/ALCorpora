@@ -17,6 +17,7 @@ from . import counts as count
 from . import log
 from .log import Action
 from .suite import PlanRunError
+from protocolize.output_layout import RESULTS_DIR
 # The base a config's relative paths resolve against when the config
 # does not name its own directory.  The process's cwd, because this
 # tool is not tied to any one checkout.
@@ -137,7 +138,7 @@ def plan_env(plan, build_dir: Path, cfg: dict,
     return suite.Env(
         target=target, tree=build_dir,
         origin=Path(origin_dir) if origin_dir else Path(cfg['target_dir']),
-        results=build_dir / 'benchmark_results',
+        results=build_dir / RESULTS_DIR,
         # The MEASUREMENT width, not the build policy.  A suite corpus's width
         # is part of its measurement — its drivers are CPU-bound and contend,
         # so a baseline recorded at one width and compared against a run at
@@ -418,12 +419,12 @@ def ensure_origin(ctx, mode: str = 'debug', timeout: int = 1800) -> bool:
                    f"({bc.crash} crash, {bc.timeout} timeout) — cannot proceed",
                    action=Action.ERROR)
         return False
-    n = save_origin(build_dir / 'benchmark_results', origin_dir,
+    n = save_origin(build_dir / RESULTS_DIR, origin_dir,
                     ctx.cfg, ok=bench_ok)
     if n == 0:
         log.action(f"origin run captured nothing "
                    f"(bench_ok={bench_ok}, {n} entries) — aborting; "
-                   f"see {build_dir / 'benchmark_results'}",
+                   f"see {build_dir / RESULTS_DIR}",
                    action=Action.ERROR)
         return False
     # Keep the origin EXECUTABLE with the baseline: the _origin_*_tmp dir

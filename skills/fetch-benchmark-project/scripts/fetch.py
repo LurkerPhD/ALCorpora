@@ -32,6 +32,8 @@ REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from protocolize.output_layout import RESULTS_DIR  # noqa: E402
+
 BENCH = REPO / 'benchmark'
 BENCH_CSV = BENCH / 'benchmark.csv'
 CSV_COLUMNS = ('number', 'name', 'language', 'build_system', 'verification',
@@ -296,8 +298,11 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
 
 
 #: Directories a benchmark folder holds that are OUTPUT, not the checkout.
+#: The run's own results directory comes from the tool rather than being
+#: spelled again here, so the harness that WRITES it and the search that must
+#: skip it cannot drift apart.
 _OUTPUT_DIRS = frozenset({'origin_release', '.work', 'results', 'build',
-                          'benchmark_results'})
+                          RESULTS_DIR})
 
 
 def _inner_source(dest: Path) -> Path:

@@ -2390,7 +2390,7 @@ def _staging_for(proj: Path, case_dir: Path, root: Path,
         ops.append({'op': 'env', 'name': home, 'value': '{home}'})
     resource = spec.get('resource_dir')
     if resource:
-        found = [d for d in proj.rglob(resource) if d.is_dir()]
+        found = _our_own_files(proj.rglob(resource), dirs=True)
         if not found:
             raise ValueError(
                 f'the corpus declares a resource directory {resource!r} that '
@@ -2412,7 +2412,7 @@ def _staging_for(proj: Path, case_dir: Path, root: Path,
                 'the corpus declares a config environment variable or a '
                 'substitution but no config_glob, so there is no file to '
                 'find it in')
-        configs = [f for f in sorted(proj.rglob(glob)) if f.is_file()]
+        configs = _our_own_files(proj.rglob(glob))
         if not configs:
             raise ValueError(
                 f'the corpus declares a config file {glob!r}, which its tree '
@@ -2429,6 +2429,34 @@ def _staging_for(proj: Path, case_dir: Path, root: Path,
     if spec.get('alias_upper'):
         ops.append({'op': 'alias', 'in': '{work}'})
     return ops
+
+
+def _our_own_files(paths, *, dirs: bool = False) -> list[Path]:
+    """A project search's hits, MINUS what this tool's own runs left behind.
+
+    A run of the plan writes into ``<tree>/benchmark_results`` — staged inputs,
+    substituted configs, captured output — and those copies sit under the
+    project's root, so an ``rglob`` over the project finds them.  They are not
+    the project's files, and taking one is silent: measured on a hand-written
+    make project, a previous run's copy of the program config sorted BEFORE
+    the real ``bin/<config>``, the capture staged the stale copy, and the
+    substitution it then declared was not in it — so every case died naming a
+    file the project had all along.  The failure surfaced one run later, in a
+    different place, with nothing pointing back here.
+
+    Sorted, so the answer does not depend on the filesystem's enumeration
+    order.
+    """
+    from protocolize.output_layout import RUN_OUTPUT_DIRS
+
+    out: list[Path] = []
+    for p in sorted(paths):
+        if not (p.is_dir() if dirs else p.is_file()):
+            continue
+        if any(part in RUN_OUTPUT_DIRS for part in p.parts):
+            continue
+        out.append(p)
+    return out
 
 
 def _verification_from_case_dirs(proto: Protocol, case_dir: Path,

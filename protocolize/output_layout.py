@@ -46,7 +46,23 @@ from collections.abc import Iterable
 from pathlib import Path
 
 __all__ = ['assign_dirs', 'final_dirs', 'stem_key',
-           'roots_from_compile_commands', 'find_repo_root']
+           'roots_from_compile_commands', 'find_repo_root',
+           'RUN_OUTPUT_DIRS', 'RESULTS_DIR']
+
+#: Where a run of the plan reports.  One name, spelled here, because three
+#: places depend on it agreeing: the harness that writes it, the origin that
+#: copies goldens out of it, and the onboarding capture, which must NOT see it
+#: when it searches the project for the project's own files.
+RESULTS_DIR = 'benchmark_results'
+
+#: Directories a run of THIS TOOL leaves inside or beside a project.  A search
+#: over the project's tree has to skip them, and the failure when it does not
+#: is silent-but-fatal: measured on a hand-written make project, an earlier
+#: run's copy of the program config sat under `benchmark_results/work/<case>/`
+#: and sorted BEFORE the real `bin/<config>`, so the capture staged the stale
+#: copy — and the substitution it then tried to apply was not in it, so every
+#: case died naming a file the project had all along.
+RUN_OUTPUT_DIRS = (RESULTS_DIR,)
 
 
 def assign_dirs(sources: Iterable[Path],
