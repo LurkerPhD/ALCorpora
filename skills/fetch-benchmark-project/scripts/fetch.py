@@ -128,9 +128,18 @@ def run(shell_line: str, cwd: Path) -> tuple[bool, str]:
     return r.returncode == 0, (r.stdout or '') + (r.stderr or '')
 
 
-def native(src: Path, args) -> tuple[bool, str]:
-    """Build and test the project the way IT builds — step 1 and 2."""
+def native(src: Path, args) -> tuple[bool, str, list]:
+    """Build and test the project the way IT builds — steps 1 and 2.
+
+    Returns ``(ok, log, prepare_ops)``. The prepare ops are the ones the
+    caller DECLARED (``--prepare``): this script does not invent a fix — a
+    build that fails is diagnosed by the SKILL, which researches the remedy
+    and hands it back as an idempotent op. That is where the "which fix"
+    judgement belongs, because it differs per project; here it is only run
+    and recorded.
+    """
     log = ''
+    remedies: list = list(getattr(args, 'prepare_ops', []) or [])
     for line in (args.configure, args.build, args.test):
         if not line:
             continue
@@ -138,22 +147,12 @@ def native(src: Path, args) -> tuple[bool, str]:
         ok, out = run(cmd, cwd=src)
         log += f'$ {cmd}\n{out[-2000:]}\n'
         if not ok:
-            return False, log
-    return True, log
-
-
-def _language(proto) -> str:
-    """The project's dominant source language, from the protocol itself."""
-    counts: dict[str, int] = {}
-    for e in proto.compilation:
-        counts[e.language or '?'] = counts.get(e.language or '?', 0) + 1
-    if not counts:
-        return '?'
-    return max(counts, key=counts.get)
+            return False, log, remedies
+    return True, log, remedies
 
 
 def prove_legal(dest: Path, src: Path, build: Path, number: int,
-                src_name: str) -> int:
+                src_name: str, remedies: 'list | None' = None) -> int:
     """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row."""
     from protocolize.onboard.extract import (ExtractionError,
                                              capture_verification,
@@ -178,6 +177,11 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
                     verify_on_replay_b='no')
     print(f'  §A: {report.compared} products compared, OK')
 
+    # RECORD the remedies that made the build work as PREPARE ops: they
+    # carry a check, so a fresh checkout reproduces the build and a
+    # repeat pays nothing.
+    if remedies:
+        proto.prepare = list(remedies) + list(proto.prepare or ())
     proto.save(dest / 'protocol.json')
     data = capture_verification(proto, build, src, project_root=src)
     data['protocol'] = 'protocol.json'
@@ -274,10 +278,17 @@ def main(argv=None) -> int:
                    help='the native VERIFY command')
     p.add_argument('--tree-subdir', default='build',
                    help='the build directory, relative to the source')
+    p.add_argument('--prepare', default=None,
+                   help='JSON list of one-time prepare ops the SKILL diagnosed '
+                        '(each with a `check` and a `run`); recorded into the '
+                        'protocol so a fresh checkout reproduces the build')
     p.add_argument('--readmit', action='store_true',
                    help='re-prove a project already in benchmark/ (its SOURCE '
                         'is the argument), after a renumber or a tool change')
     args = p.parse_args(argv)
+    args.prepare_ops = []
+    if args.prepare:
+        args.prepare_ops = json.loads(Path(args.prepare).read_text())
 
     if args.readmit:
         dest = Path(args.source).resolve()
@@ -290,7 +301,7 @@ def main(argv=None) -> int:
         # A renumber (or a tool change) invalidates the previous build: its
         # recorded paths name the OLD directory, so build afresh.
         shutil.rmtree(src / args.tree_subdir, ignore_errors=True)
-        ok, log = native(src, args)
+        ok, log, remedies = native(src, args)
         if not ok:
             print('REFUSED: the project does not build and verify natively.\n'
                   + log, file=sys.stderr)
@@ -301,7 +312,7 @@ def main(argv=None) -> int:
             return 1
         print('  native build + verify: OK')
         return prove_legal(dest, src, src / args.tree_subdir, number,
-                           dest.name.split('-', 1)[-1])
+                           dest.name.split('-', 1)[-1], remedies)
 
     src_name = args.name or Path(args.source.rstrip('/')).stem
     src_name = src_name[:-4] if src_name.endswith('.git') else src_name
@@ -318,7 +329,7 @@ def main(argv=None) -> int:
         print(f'REFUSED: {exc}', file=sys.stderr)
         return 1
     src = dest / src_name
-    ok, log = native(src, args)
+    ok, log, remedies = native(src, args)
     if not ok:
         print('REFUSED: the project does not build and verify natively.\n' + log,
               file=sys.stderr)
@@ -327,7 +338,8 @@ def main(argv=None) -> int:
                    status='REFUSED', notes='does not build/verify natively')
         return 1
     print('  native build + verify: OK')
-    return prove_legal(dest, src, src / args.tree_subdir, n, src_name)
+    return prove_legal(dest, src, src / args.tree_subdir, n, src_name,
+                       remedies)
 
 
 if __name__ == '__main__':

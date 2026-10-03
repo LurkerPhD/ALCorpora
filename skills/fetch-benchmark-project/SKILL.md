@@ -66,6 +66,44 @@ python3 skills/fetch-benchmark-project/scripts/fetch.py \
     <github url or local path> --name <name>
 ```
 
+## When the native build fails: diagnose it, do not paper over it
+
+Steps 1-2 fail on real projects, and the failure is INFORMATION. A project
+written for another platform or an older compiler is a legal project whose
+build needs a fix; finding that fix is YOUR job, not a script's — it differs
+per project, which is exactly what a skill is for. The mechanical half only
+runs what you decided and records it.
+
+The loop:
+
+1. **Read the failure.** It names its own cause. Real examples:
+   * `No rule to make target '..\bd\dpdcbd.o'` — the Makefile spells target
+     paths with BACKSLASHES (Windows). Confirm: the slashed form names a real
+     file, the backslashed one does not. The fix is path normalisation.
+   * `Error: Type mismatch between actual argument ...` / `BOZ constant ...
+     nonstandard postfix syntax` — today's gfortran rejects a Fortran dialect
+     the project was written in. The fix is the compiler flag gfortran
+     documents for that diagnostic (`-fallow-argument-mismatch`,
+     `-fallow-invalid-boz`, `-std=legacy`).
+2. **Decide the fix, and make it idempotent.** Two kinds:
+   * a **patch to the source** (a Makefile path, a build file) → a `prepare`
+     op with a `check` (a shell line that succeeds when the fix is ALREADY
+     there) and a `run` (the shell line that applies it);
+   * a **build flag** → part of the `--build` command line the skill passes.
+3. **Pass it in and re-prove.** `--prepare` takes the ops; the script records
+   them into the protocol (they run at most once) and re-runs the whole
+   proof. If the build still fails, the diagnosis was wrong — say so and stop;
+   never record a fix that did not make the build work.
+4. **Nothing is guessed.** A `check` that cannot be written, or a fix with no
+   observable confirmation, is not a fix — it is a change to the project that
+   the next reader cannot reproduce.
+
+```bash
+python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+    --build "make -C source/mis FFLAGS='-std=legacy ...' && make -C source/mds all" \
+    --prepare fix.json     # the ops YOU diagnosed, each with check + run
+```
+
 ## The layout, and the one rule about it
 
 ```
