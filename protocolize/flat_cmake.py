@@ -86,16 +86,25 @@ def flat_cmake(protocol: Protocol, *, tree: str | Path,
     wrong in a way that surfaces as a missing header deep in a build.
     """
     tree_s = str(tree)
+    scripts: dict[str, str] = {}
     text = _render(protocol, select(protocol), tree_s,
-                   list(extra_includes), list(extra_links))
+                   list(extra_includes), list(extra_links), scripts)
     out = Path(tree) / name
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding='utf-8')
+    # The commands too long to be an argument, written out to be RUN.  They
+    # live beside the CMakeLists rather than in a scratch directory because
+    # the generated build is self-contained: everything it runs, it carries.
+    for rel, body in scripts.items():
+        f = Path(tree) / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body, encoding='utf-8')
     return str(out)
 
 
 def _render(protocol: Protocol, selection: Selection, tree: str,
-            extra_includes: list[str], extra_links: list[str]) -> str:
+            extra_includes: list[str], extra_links: list[str],
+            scripts: dict[str, str]) -> str:
     lines: list[str] = [_HEADER, '']
     has_fortran = _has_fortran(selection)
     if not has_fortran:
@@ -166,7 +175,8 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
             parent = str(Path(out).parent)
             lines.append(f'  COMMAND "${{CMAKE_COMMAND}}" -E make_directory '
                          f'"{_cmake_string(parent)}"')
-            lines.append(f'  COMMAND sh -c "{_shell_arg(command)}"')
+            lines.append(_command_line(command, tree, _script_index(out),
+                                       scripts))
             for dep in depends:
                 lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
             lines.append('  VERBATIM)')
@@ -215,8 +225,8 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
                          f'"{_cmake_string(cwd)}"')
             lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                          f'"{_cmake_string(str(Path(pp).parent))}"')
-            lines.append(f'  COMMAND sh -c '
-                         f'"{_shell_arg(_expand(e.preprocess, tree))}"')
+            lines.append(_command_line(_expand(e.preprocess, tree), tree,
+                                       f'{_script_index(stem)}-pp', scripts))
             lines.append(f'  DEPENDS "{_cmake_string(_expand(e.file, tree))}"')
             lines.append('  VERBATIM)')
             deps = [pp] + deps
@@ -225,8 +235,8 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
                      f'"{_cmake_string(cwd)}"')
         lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                      f'"{_cmake_string(str(Path(out).parent))}"')
-        lines.append(f'  COMMAND sh -c '
-                     f'"{_shell_arg(_expand(e.command_line(), tree))}"')
+        lines.append(_command_line(_expand(e.command_line(), tree), tree,
+                                   _script_index(stem), scripts))
         for dep in dict.fromkeys(deps):
             lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
         lines.append('  VERBATIM)')
@@ -254,8 +264,8 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                      f'"{_cmake_string(str(Path(out).parent))}"')
         if prod.command:
-            lines.append(f'  COMMAND sh -c '
-                         f'"{_shell_arg(_expand(prod.command, tree))}"')
+            lines.append(_command_line(_expand(prod.command, tree), tree,
+                                       _script_index(str(i)), scripts))
         for dep in dict.fromkeys(deps):
             lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
         lines.append('  VERBATIM)')
@@ -510,6 +520,52 @@ def _shell_arg(command: str) -> str:
     that has to read them.
     """
     return command.replace('\\', '\\\\').replace('"', '\\"')
+
+
+#: A single execve ARGUMENT may not exceed Linux's ``MAX_ARG_STRLEN``
+#: (131072), and the limit is PER ARGUMENT, not on the total.  Measured on the
+#: same kernel: ``sh -c`` with a 65536-byte argument runs; at 131071 bytes
+#: execve itself fails with E2BIG, before the shell starts.
+#:
+#: A big project cannot avoid this.  A link line grows with the number of
+#: units, and one real corpus's executable link is 244,887 bytes once every
+#: object is spelled absolutely -- while the SAME build's own ninja line is
+#: 126,616 bytes, just under the limit, because it names objects RELATIVELY.
+#: So the project builds and its replay does not, and the failure reads as
+#: "the protocol does not rebuild the project".
+#:
+#: The margin is deliberate: the recorded command is one argument among
+#: several, and the limit applies to each of them.
+_LONG_COMMAND = 100_000
+
+#: Where oversized commands are written, relative to the tree the flat build
+#: is generated into.
+_SCRIPT_DIR = '_replay_cmds'
+
+
+def _command_line(command: str, tree: str, idx: str,
+                  scripts: dict[str, str]) -> str:
+    """The CMake ``COMMAND`` line that runs *command*.
+
+    A shell line is delivered the same way either way — this chooses HOW, not
+    what.  A short command goes in as an argument (``sh -c "<cmd>"``); an
+    oversized one is written to a file and run as ``sh <file>``, which is the
+    same shell reading the same text, minus the argument-length limit.
+
+    Nothing is parsed, split or re-quoted to do this, so the replay stays
+    verbatim: the recorded command is still the thing that runs.
+    """
+    if len(command) <= _LONG_COMMAND:
+        return f'  COMMAND sh -c "{_shell_arg(command)}"'
+    rel = f'{_SCRIPT_DIR}/{idx}.sh'
+    scripts[rel] = command + '\n'
+    return f'  COMMAND sh "{_cmake_string(str(Path(tree) / rel))}"'
+
+
+def _script_index(text: str) -> str:
+    """A filename-safe spelling of *text*, for a generated script's name."""
+    safe = ''.join(c if (c.isalnum() or c in '-_.') else '_' for c in text)
+    return safe[:120] or 'cmd'
 
 
 def _cmake_list(items: 'Iterable[str]') -> str:
