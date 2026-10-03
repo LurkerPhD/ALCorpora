@@ -70,18 +70,28 @@ python3 skills/fetch-benchmark-project/scripts/fetch.py \
 
 ```
 benchmark/
-  001-minFortran/     CMakeLists.txt source/ protocol.json verification_plan.json
-  002-minCpp/         CMakeLists.txt src/     protocol.json verification_plan.json
-  003-cJSON/          cJSON/                   protocol.json verification_plan.json
+  001-minFortran/   CMakeLists.txt source/          <- tracked SOURCE
+  002-minCpp/       CMakeLists.txt src/             <- tracked SOURCE
+  003-goldenDemo/   CMakeLists.txt src/ verification/  (golden)
+  004-goldenChain/  ... + facts.json                (golden + chains)
+  005-goldenField/  ... + facts.json                (golden + field model)
+  006-cJSON/        cJSON/                           <- a whole checkout
   ...
+  benchmark.csv     every project and how far it got
 ```
 
-* `benchmark/` is **gitignored** — it holds whole third-party checkouts, and
-  the admission order is local state, not a fact about this tool.
+* **001-005 are the minimal SAMPLES**, one per verification kind, and their
+  SOURCE is tracked: CMakeLists, sources, the verification INPUTS, and
+  `facts.json` (what the project declares about its artifacts and chains).
+  They are the reference shapes — a change that breaks one of them is a
+  regression, and running them costs seconds.
+* **006+ are real projects.** A whole third-party checkout is NOT tracked.
+* **Generated protocols are OUTPUT, never tracked**: `protocol.json`,
+  `verification_plan.json`, the build tree, and `origin_release/` are all
+  built, not committed. The tool regenerates them.
 * the number is the ADMISSION ORDER, three digits, and it never changes once
-  a project is admitted: the projects are read in the order the failures were
-  found. The NEXT project takes the smallest free number, so a failed
-  admission does not leave a gap.
+  a project is admitted. The NEXT project takes the smallest free number, so
+  a failed admission does not leave a gap.
 * a protocol records paths OUTSIDE the tree (the project's own sources) as
   ABSOLUTE, by design — so a project admitted here stays put. Moving its
-  directory invalidates its recorded protocols; re-run the skill instead.
+  directory invalidates its recorded protocols; re-run with `--readmit`.
