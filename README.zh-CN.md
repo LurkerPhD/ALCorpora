@@ -1,0 +1,259 @@
+# protocolize
+
+> English: [README.md](README.md)
+
+把**任意项目**归一化成两个产物,每个都在**出口自验证**:
+
+| 产物 | 回答的问题 | schema |
+|---|---|---|
+| **构建协议** | 这个项目是怎么**构建**的? | `private_protocol.Protocol` |
+| **验证协议** | 我们凭什么说它的一次运行是**对的**? | `verification_plan.VerificationPlan` |
+
+没被**重建过**(构建协议)/ **跑过**(验证协议)的协议不是产物。Fortran 只是第一个
+*profile*——这个仓库里不许出现语言名、构建系统名、项目名。
+
+`PLAN.md` 是计划、验收标准与实测证据;本文件讲的是它**实际怎么运转**。
+**请随时维护本文件**——这里一张图如果指向了一个已经搬走的模块,对下一个读者的
+误导和一个过期注释完全一样。
+
+---
+
+## 不可违反的不变量
+
+1. **构建是构建的权威。** 只问构建系统自己的子工具
+   (`ninja -t compdb/query/commands/targets`、`make -Bn`、
+   `ctest --show-only=json-v1`)。**绝不解析 manifest**——manifest 是那个工具
+   的内部格式。
+2. **同一条路径的两种拼写,含义相反。**
+   * 在 `${TREE}` 之下——重放**必须自己 make** 的(生成源、产物)。它随协议走。
+   * **绝对路径**——重放**只读**的(项目源、第三方库、配置期生成的 header)。
+     它不随协议走,且**不许改写**。
+   `$` 是保留字符:字面美元写 `$$`,裸 `$` 直接拒绝。
+3. **stem 就是 unit 的身份**:去掉一个尾扩展名,大小写保留。`isamax.f` 和
+   `isamax.cpp` 是**同一个 unit、同一个链接成员**——这正是产物的链接行能跟着
+   unit 从一个 form 走到另一个 form 的原因。
+4. **不许猜。** 歧义一律**拒绝**,绝不静默选一个:多个候选 case 声明(会拿邻居的
+   案例来验证本语料)、stem 冲突(会静默丢掉一个 unit)、make 的 `$(shell)` 源
+   没有任何命令产出、state 要的 form 协议里没有。
+
+---
+
+## 模块地图
+
+```
+protocolize/
+  tree_anchor.py        ${TREE} 占位符: expand / escape / 校验(裸 $ 拒绝)
+  compile_commands.py   读 compile database(layer 1;协议是它的超集)
+  output_layout.py      输出目录规则;repo root;longest owning root
+  private_protocol.py   构建协议 schema + problems() + canonical_stem
+  verification_plan.py  验证协议 schema + problems()
+  flat_cmake.py         协议 + state -> 一个扁平 CMakeLists.txt
+  onboard/
+    extract.py          从已构建的树里读出协议(ninja/CMake);
+                        capture_verification;own_roots;prepare;tests;support_files
+    make_extract.py     make 后端(make -Bn)
+    selfcheck.py        §A:从协议重建并比对
+  verify/
+    suite.py            运行一个验证计划;算裁决
+    cli.py              CLI: python3 -m protocolize.verify.cli <build tree>
+    reference.py        origin(黄金)捕获;计划的运行时环境
+    compare.py          text/field 比对(lockstep / numclose / 列模型)
+    counts.py           BenchCounts:从 runner 自己的输出解析计数
+    log.py              日志 / tee / Action
+skills/onboard-project/  技能:SKILL.md + scripts/onboard.py + reference/*.json + tests/
+```
+
+**分层。** `tree_anchor.py` 是 layer 1(transpiler 也要用它);协议代码是 layer 2,
+import 它——所以 layer 1 永远不会反过来去够 layer 2。
+
+---
+
+## 交付流程
+
+```
+                     任意项目(语言无关)
+                          |
+   1  研究:哪个构建系统?怎么验证?需要 prepare 吗?
+                          |                    <- 这一步是 SKILL 的,不是脚本的:
+   2  原生构建一次 + 原生验证一次              "怎么构建 X" 是逐项目不同的研究结果
+        |- 失败,且能持久修复 -> 记成一个 prepare op
+        `- 否则              -> 报失败
+                          |
+   3  归一化:extract.py / onboard.py 填两个模板
+                          |
+              +-----------+-----------+
+              v                       v
+        [构建协议]              [验证协议]
+              |                       |
+   4 §A 自验证:                5 §B 自验证:
+      协议 -> flat build ->         同一 plan 在 reference 上跑
+      编译 -> 与原生比对            + flat build 跑同一 plan 得同裁决
+              |                       |
+              +-----------+-----------+
+                          v
+                  两个已自验证的产物
+```
+
+第 1–2 步属于 skill,因为「怎么构建项目 X」逐项目不同(这里一个手写 shell,那里
+CMake)。把它编码进工具,就是把项目知识推进了工具里。一条可复用的原生构建命令记成
+一个 `prepare` op——幂等,带 `check`,所以**最多跑一次**。
+
+---
+
+## 构建协议:抽取 + 证明(§A)
+
+```
+已构建的树
+   |
+   |- build.ninja / CMakeCache.txt -> ninja 后端
+   |- Makefile(根,或下一级)       -> make 后端
+   `- 都没有                       -> 拒绝(不许猜)
+   |
+   v  Toolchain(build, root)
+   |- targets()       -> 每条边的 (output, rule)
+   |- compdb()        -> 编译数据库,由构建系统自己清理过
+   |- commands_for()  -> 每 target;闭包在前,该 target **自己的边在最后一行**
+   |- inputs_many()   -> explicit 与 | / || 之后分开
+   |
+   |- _raw_entries : COMPILER 边 + PREPROCESS 边
+   |     `- _edges : 在**中间产物**上 join
+   |           (一个 unit != 一条 compdb 记录:CMake 把扫描型源编成两步)
+   |           `- _units : stem = 源相对它自己的根部,去扩展名
+   |
+   |- _products    : 链接目标;成员/objects 记成 STEM;libs 保序
+   |- _generated   : CUSTOM_COMMAND 的产出 + 命令 + depends
+   |- produced 集  : 决定每条路径的**拼写**(必须在拼写之前算出来)
+   |- own_roots    : 哪些 unit 是项目自己的(.gitmodules / cache 的 _SOURCE_DIR)
+   |- tests        : ctest --show-only=json-v1
+   `- support_files: 测试**要读**、但既不编译也不生成的文件(以**内容**携带)
+   |
+   v
+Protocol  -- problems() 必须 == [] -- (是 list,不是 raise:一次给全部缺口)
+   |
+   v
+_prove -> selfcheck.self_check():
+   mirror 树 -> 删掉生成的源(逼重放真的去 MAKE 它们)
+   -> flat_cmake -> cmake+ninja -> 逐产物比对
+      |- 不等 -> ExtractionError:拒绝交出协议
+      `- 相等 -> 返回
+```
+
+### §A 比对——判据
+
+`selfcheck` 比的是**产物**。`PLAN.md` §A 规定每个产物四项检查(下面这张实测表决定了
+什么该红、什么不该红):
+
+1. **defined symbols**(`nm -g --defined-only`;滤掉 archive 成员头和版本化符号);
+2. **规范化指令序列**(`objdump -d --no-show-raw-insn`):去掉地址列和
+   `# <addr> <sym>` 注释,`0x…(%rip)` -> `(%rip)`,
+   `call/jmp 0x… <sym>` -> `call/jmp <sym>`;
+3. **`.data` 原始字节**(`objcopy -j .data`)——逮住只看代码时看不见的 `DATA` 常量;
+4. **section 清单**(`readelf -S` 的名称+类型;**不含大小**)。
+
+| 构造 | 整文件 | 规范化 .text | .data | 结论 |
+|---|---|---|---|---|
+| 同代码,路径**长度不同** | 差 | **同** | 同 | EQUAL |
+| `-O0` vs `-O2` | 差 | **差** | — | DIFFER |
+| `__DATE__`/`__TIME__` 差一秒 | 差 | **同** | 同 | EQUAL |
+| `data x /1/` vs `/2/` | 差 | 同(盲) | **差** | DIFFER |
+| section 基址平移 | 同 | 同 | 同 | EQUAL |
+
+**不许用**:整文件 sha256(`__DATE__` 反例)、`.rodata` 内容(内嵌的源码路径就落在
+那里)、裸 `.text` 字节(路径长度变化会移动 rip 位移)、收 `.o` 文件。
+
+机制:路径串落在 `.rodata`;`.text` 用 rip 相对位移引用它,所以路径长度变化会移动
+位移(被规范化掉)但不改变指令序列。产物是 PIE,所以 `.data` 里的指针是加载期重定位
+——`.data` 字节与路径无关,可以裸比。
+
+> **现状:** `selfcheck.py` 今天只实现了第 (1) 项。第 (2)–(4) 项属于 M4。
+
+---
+
+## 验证协议:捕获 + 证明(§B)
+
+```
+capture_verification(proto, build, root, project_root, declaration, facts)
+   |
+   |- proto.tests 非空?
+   |     `- -> registry 形状: target=tree, run=suite (ctest),
+   |           golden=none + stamp, assertions=self_report(项目自己的表)
+   |
+   `- 否则 _locate(project, finders):
+        |- case_list (cases.txt / testcases.txt / *.files)
+        |     |- 穿 INCLUDE 链读记录
+        |     |- 列布局取**最宽**的记录(列表里混着有断言和无断言的条目)
+        |     `- deck_root 从树里推(不一定是列表所在目录)
+        |- one_per_dir (verification/ / Verification/ / tests/cases)
+        |     |- 输入名拼写从树里推
+        |     `- **整个**目录被 stage(支撑 deck 和 restart 状态就在输入旁边)
+        `- 都没有 / 有歧义 -> 拒绝
+   |
+   v
+VerificationPlan.from_json -> problems() 必须 == []
+   (拒绝:无 require_min;process 运行没 inputs;golden 是 none 却没 stamp;
+    裸 $;golden.root 是字面路径;自相矛盾的 chain)
+   |
+   v
+在 reference 上跑 cli.main([tree]) -> 退出码**就是**裁决 -> 0 才算证明通过
+```
+
+**origin 对所有项目是一条规则:** 让 REFERENCE 实例跑同一个 plan,把它产出的、
+plan 称之为 golden 的东西留下来。reference 与 candidate 因此走同一条代码路径,
+「失败的 reference 运行什么都捕获不到」由构造保证成立。
+
+`golden.source: reference_run` 证明的是 candidate **与 reference 一致**——这是
+*稳定性*,不是*正确性*。一个自带参考输出的项目手里有外部真值:在 `provenance` 里
+说明它。
+
+---
+
+## 重放:协议 -> flat build
+
+```
+Protocol + state(可选;无 state = 每个 unit 保持它记录里的 form)
+   |
+   v  reconcile_state  <- 闭包规则
+   |     被转换的 provider,不能被仍为 Fortran 的 unit `use`
+   |     (不可达的条目退回,并 warn,而不是拒绝)
+   v  select
+   |     每个 stem 选一个 form;协议里没有的 form -> 记成 missing
+   |     -> ProtocolError(宁可响亮地失败,也不产出一个只是**看起来**符合 state
+   |        的 build)
+   v  _render
+   |     project(<中性名> LANGUAGES ...)
+   |     module 目录与 preprocess 设置必须在第一个 target **之前**
+   |     add_custom_command(OUTPUT ...)              <- 生成的源
+   |     set_source_files_properties(COMPILE_OPTIONS ...)  <- 从命令反推的 flags
+   |     add_library / add_executable(成员 = stem 的源)
+   |     target_link_libraries(本 build 产的库 -> 用 target 名;
+   |                            外部库 -> 用路径)
+   |     调用方声明的 extra includes / 链接附加项
+   |     file(WRITE) support_files + enable_testing + add_test
+   v
+CMakeLists.txt -> cmake+ninja -> 产物 -> §A 比对
+```
+
+生成器输出的是**意图,不是命令**:它说「这些源、这些 flags、这个产物」,让 CMake
+去组装命令,这样 CMake 已经做对的事情(模块排序、两种 form 不互相碰撞)就保住了。
+代价是一条命令是被*重新组装*而不是被照抄的——这正是协议自己记录那条命令的用处。
+
+---
+
+## 怎么跑
+
+```bash
+# 包自身 + 技能的单测
+python3 -m pytest -q
+
+# §A 端到端,在一个真构建上
+python3 -c "
+from pathlib import Path
+from protocolize.onboard.extract import extract_and_prove
+proto, report = extract_and_prove('<build tree>', tree_root='<root>',
+                                  work_root='<scratch>')
+print(report.ok, len(proto.compilation))
+"                     # report.ok 必须是 True
+
+# §B:让一个 plan 跑在一个 build 上
+python3 -m protocolize.verify.cli <build tree>          # 退出码就是裁决
+```
