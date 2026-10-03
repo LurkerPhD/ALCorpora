@@ -152,6 +152,100 @@ def _language(proto) -> str:
     return max(counts, key=counts.get)
 
 
+def prove_legal(dest: Path, src: Path, build: Path, number: int,
+                src_name: str) -> int:
+    """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row."""
+    from protocolize.onboard.extract import (ExtractionError,
+                                             capture_verification,
+                                             extract_and_prove)
+    from protocolize.verification_plan import VerificationPlan
+    from protocolize.verify import cli
+
+    def fail(notes, **cols):
+        print(f'NOT LEGAL — {notes}', file=sys.stderr)
+        record_row(number, src_name, language=cols.pop('language', ''),
+                   native='yes', **cols, notes=notes)
+        return 1
+
+    work = dest / '.work'
+    try:
+        proto, report = extract_and_prove(build, tree_root=src, work_root=work)
+    except ExtractionError as exc:
+        print(f'NOT LEGAL — §A failed (the protocol does not replay the '
+              f'project):\n{exc}', file=sys.stderr)
+        return fail('protocol does not replay the project',
+                    build_protocol_a='no', verify_on_project_b='no',
+                    verify_on_replay_b='no')
+    print(f'  §A: {report.compared} products compared, OK')
+
+    proto.save(dest / 'protocol.json')
+    data = capture_verification(proto, build, src, project_root=src)
+    data['protocol'] = 'protocol.json'
+    plan = VerificationPlan.from_json(data)
+    lang = _language(proto)
+    if plan.problems():
+        print('NOT LEGAL — §B: the captured plan is not executable:\n  '
+              + '\n  '.join(plan.problems()), file=sys.stderr)
+        record_row(number, src_name, language=lang, native='yes',
+                   build_protocol_a='yes', verify_on_project_b='no',
+                   verify_on_replay_b='no', status='FAIL_B_PLAN',
+                   notes='captured plan is not executable')
+        return 1
+    plan.save(dest / 'verification_plan.json')
+
+    origin = dest / 'origin_release'
+    if plan.golden.source == 'reference_run':
+        from protocolize.verify import reference, suite
+        cfg = {'target_dir': str(dest), 'tree_root': str(src),
+               'protocol': str(dest / 'protocol.json'), '_config_dir': dest}
+        env = reference.plan_env(plan, dest, cfg, origin_dir=origin)
+        env.tree = src.resolve()
+        goldens = suite.ensure_reference(plan, env)
+        if goldens == 0:
+            return fail('reference run captured no goldens',
+                        language=lang, build_protocol_a='yes',
+                        verify_on_project_b='no', verify_on_replay_b='no',
+                        status='FAIL_B_REF')
+        print(f'  captured {goldens} goldens from the reference run')
+
+    rc = cli.main([str(dest), '--tree', str(src), '--origin', str(origin)])
+    if rc != 0:
+        return fail(f"§B failed on the project's own build (exit {rc})",
+                    language=lang, build_protocol_a='yes',
+                    verify_on_project_b='no', verify_on_replay_b='no',
+                    status='FAIL_B_REF')
+    print("  §B: green on the project's own build")
+
+    flat = work / 'tree'
+    proto.save(flat / 'protocol.json')
+    shutil.copy2(dest / 'verification_plan.json',
+                 flat / 'verification_plan.json')
+    rc = cli.main([str(flat), '--tree', str(flat), '--origin', str(origin)])
+    if rc != 0:
+        return fail(f'§B failed on the REPLAY (exit {rc})', language=lang,
+                    build_protocol_a='yes', verify_on_project_b='yes',
+                    verify_on_replay_b='no', status='FAIL_B_FLAT')
+    print('  §B: green on the replay — the two verdicts agree')
+
+    shutil.rmtree(work, ignore_errors=True)
+    record_row(number, src_name, language=lang, native='yes',
+               build_protocol_a='yes', verify_on_project_b='yes',
+               verify_on_replay_b='yes', status='PASS',
+               notes='fetched from source')
+    print(f'LEGAL: benchmark/{dest.name}/ holds the source, protocol.json, '
+          f'verification_plan.json')
+    return 0
+
+
+def _inner_source(dest: Path) -> Path:
+    """The project's own checkout inside a benchmark directory."""
+    skip = {'origin_release', '.work', 'results', 'build'}
+    for d in sorted(dest.iterdir()):
+        if d.is_dir() and d.name not in skip and not d.name.startswith('.'):
+            return d
+    raise FetchError(f'{dest} holds no source checkout')
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('source', help='github url, or a local path to copy')
@@ -165,7 +259,34 @@ def main(argv=None) -> int:
                    help='the native VERIFY command')
     p.add_argument('--tree-subdir', default='build',
                    help='the build directory, relative to the source')
+    p.add_argument('--readmit', action='store_true',
+                   help='re-prove a project already in benchmark/ (its SOURCE '
+                        'is the argument), after a renumber or a tool change')
     args = p.parse_args(argv)
+
+    if args.readmit:
+        dest = Path(args.source).resolve()
+        src = _inner_source(dest)
+        number = int(dest.name[:3])
+        if not src.is_dir():
+            print(f'REFUSED: {src} is not a directory', file=sys.stderr)
+            return 1
+        print(f're-proving #{number:03d} {dest.name}')
+        # A renumber (or a tool change) invalidates the previous build: its
+        # recorded paths name the OLD directory, so build afresh.
+        shutil.rmtree(src / args.tree_subdir, ignore_errors=True)
+        ok, log = native(src, args)
+        if not ok:
+            print('REFUSED: the project does not build and verify natively.\n'
+                  + log, file=sys.stderr)
+            record_row(number, dest.name.split('-', 1)[-1], native='no',
+                       build_protocol_a='no', verify_on_project_b='no',
+                       verify_on_replay_b='no', status='REFUSED',
+                       notes='does not build/verify natively')
+            return 1
+        print('  native build + verify: OK')
+        return prove_legal(dest, src, src / args.tree_subdir, number,
+                           dest.name.split('-', 1)[-1])
 
     src_name = args.name or Path(args.source.rstrip('/')).stem
     src_name = src_name[:-4] if src_name.endswith('.git') else src_name
@@ -173,7 +294,6 @@ def main(argv=None) -> int:
     dest = BENCH / f'{n:03d}-{src_name}'
     print(f'admitting #{n:03d} {src_name} -> {dest}')
 
-    # Step 0-2: fetch, build, verify — natively.
     if dest.exists():
         print(f'REFUSED: {dest} already exists', file=sys.stderr)
         return 1
@@ -192,93 +312,7 @@ def main(argv=None) -> int:
                    status='REFUSED', notes='does not build/verify natively')
         return 1
     print('  native build + verify: OK')
-
-    # Step 3-4: the pipeline.
-    from protocolize.onboard.extract import (ExtractionError, capture_verification,
-                                             extract_and_prove)
-    from protocolize.verification_plan import VerificationPlan
-
-    build = src / args.tree_subdir
-    work = dest / '.work'
-    try:
-        proto, report = extract_and_prove(build, tree_root=src, work_root=work)
-    except ExtractionError as exc:
-        print(f'NOT LEGAL — §A failed (the protocol does not replay the '
-              f'project):\n{exc}', file=sys.stderr)
-        record_row(n, src_name, native='yes', build_protocol_a='no',
-                   verify_on_project_b='no', verify_on_replay_b='no',
-                   status='FAIL_A', notes='protocol does not replay the project')
-        return 1
-    print(f'  §A: {report.compared} products compared, OK')
-
-    proto.save(dest / 'protocol.json')
-    data = capture_verification(proto, build, src, project_root=src)
-    data['protocol'] = 'protocol.json'
-    plan = VerificationPlan.from_json(data)
-    if plan.problems():
-        print('NOT LEGAL — §B: the captured plan is not executable:\n  '
-              + '\n  '.join(plan.problems()), file=sys.stderr)
-        proto.save(dest / 'protocol.json')
-        return 1
-    plan.save(dest / 'verification_plan.json')
-
-    # §B on the project's own build.
-    from protocolize.verify import cli
-    lang = _language(proto)
-    origin = dest / 'origin_release'
-    # A plan whose golden comes from a REFERENCE RUN has no golden yet: run
-    # the plan against the project ONCE and keep what it produces. This is the
-    # project's own output, so it is the external truth a later run is judged
-    # against.
-    if plan.golden.source == 'reference_run':
-        from protocolize.verify import reference, suite
-        cfg = {'target_dir': str(dest), 'tree_root': str(src),
-               'protocol': str(dest / 'protocol.json'), '_config_dir': dest}
-        env = reference.plan_env(plan, dest, cfg, origin_dir=origin)
-        env.tree = src.resolve()
-        n = suite.ensure_reference(plan, env)
-        if n == 0:
-            print('NOT LEGAL — §B: the reference run captured no goldens',
-                  file=sys.stderr)
-            record_row(n, src_name, language=lang, native='yes',
-                       build_protocol_a='yes', verify_on_project_b='no',
-                       verify_on_replay_b='no', status='FAIL_B_REF',
-                       notes='reference run captured nothing')
-            return 1
-        print(f'  captured {n} goldens from the reference run')
-    rc = cli.main([str(dest), '--tree', str(src), '--origin', str(origin)])
-    if rc != 0:
-        print(f'NOT LEGAL — §B failed on the project\'s own build (exit {rc})',
-              file=sys.stderr)
-        record_row(n, src_name, language=lang, native='yes',
-                   build_protocol_a='yes', verify_on_project_b='no',
-                   verify_on_replay_b='no', status='FAIL_B_REF',
-                   notes='plan not green on the project')
-        return 1
-    print('  §B: green on the project\'s own build')
-
-    # §B on the replay.
-    flat = work / 'tree'
-    proto.save(flat / 'protocol.json')
-    shutil.copy2(dest / 'verification_plan.json', flat / 'verification_plan.json')
-    rc = cli.main([str(flat), '--tree', str(flat),
-                  '--origin', str(origin)])
-    if rc != 0:
-        print(f'NOT LEGAL — §B failed on the REPLAY (exit {rc})', file=sys.stderr)
-        record_row(n, src_name, language=lang, native='yes',
-                   build_protocol_a='yes', verify_on_project_b='yes',
-                   verify_on_replay_b='no', status='FAIL_B_FLAT',
-                   notes='replay does not reach the same verdict')
-        return 1
-    print('  §B: green on the replay — the two verdicts agree')
-
-    shutil.rmtree(work, ignore_errors=True)
-    record_row(n, src_name, language=lang, native='yes',
-               build_protocol_a='yes', verify_on_project_b='yes',
-               verify_on_replay_b='yes', status='PASS', notes='fetched from source')
-    print(f'LEGAL: benchmark/{dest.name}/ holds the source, protocol.json, '
-          f'verification_plan.json')
-    return 0
+    return prove_legal(dest, src, src / args.tree_subdir, n, src_name)
 
 
 if __name__ == '__main__':
