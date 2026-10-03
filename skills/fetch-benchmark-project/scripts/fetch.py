@@ -64,7 +64,10 @@ def record_row(number: int, name: str, **values) -> None:
     import csv
     BENCH.mkdir(parents=True, exist_ok=True)
     with BENCH_CSV.open('w', encoding='utf-8', newline='') as fh:
-        w = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+        # `lineterminator='\n'` because the csv module defaults to '\r\n', and
+        # a machine-written file the repo diffs on every admission should not
+        # show its WHOLE self as changed over a one-row edit.
+        w = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, lineterminator='\n')
         w.writeheader()
         for k in sorted(rows):
             w.writerow(rows[k])
