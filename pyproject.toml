@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 # The package is importable as `protocolize`; the onboarding skill lives under
 # `skills/` and is not part of the importable package.
 [tool.setuptools]
-packages = ["protocolize", "protocolize.onboard", "protocolize.edd"]
+packages = ["protocolize", "protocolize.onboard", "protocolize.verify"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "skills/onboard-project/tests"]

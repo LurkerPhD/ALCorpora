@@ -488,58 +488,6 @@ def _join_command(argv: list[str]) -> str:
     return ' '.join(tok if tok in _SHELL_OPERATORS else shlex.quote(tok)
                     for tok in argv)
 
-    def _spell_token(self, tok: str, directory: Path | None = None) -> str:
-        """One command token, re-rooted when the build produces it.
-
-        *directory* is where the command RUNS: a token spelled relative is
-        relative to it, and this method cannot answer without knowing that.
-        Leaving a relative token alone was a silent hole — the intermediate
-        `CMakeFiles/t/made.f90-pp.f90` is relative in the build's own record,
-        so it travelled as a relative path and the replay resolved it against
-        whatever directory it happened to run in.
-        """
-        # Separate the flag from its operand so `-I/tree/x` keeps its `-I`.
-        for prefix in ('-I', '-isystem', '-J', '-fmoddir', '-module'):
-            if tok.startswith(prefix) and len(tok) > len(prefix):
-                return prefix + self._spell_token(tok[len(prefix):], directory)
-        if '/' not in tok:
-            return tok
-        if not tok.startswith('/') and directory is not None:
-            tok = str(Path(directory) / tok)
-        # A PREPROCESSED INTERMEDIATE is not in `produced` — the build writes
-        # `<src>-pp.f90` as a step of its own scan, and nothing records it as
-        # an output.  It must still follow its SOURCE: called out as an input
-        # it means "the prepared copy of a source this build makes", so a
-        # source that is produced makes its intermediate produced too.
-        # Left absolute, the replay is handed a path that only exists inside
-        # a build tree it never had.  Measured on the fixture: the compile
-        # step died on `.../CMakeFiles/demo.dir/made.f90-pp.f90`.
-        if _PP_INTERMEDIATE.search(Path(tok).name):
-            # Always the replay's own: a `-pp` file is the build system's
-            # scratch copy of a source, written inside its own build
-            # directory, and no corpus SHIPS one.  Asking `produced` is not
-            # enough — the record of what the build writes names the
-            # generated SOURCE, never the intermediate derived from it, and
-            # the two do not even share a directory (CMake puts the
-            # intermediate under the target's `CMakeFiles/`).  A resource is
-            # never spelled this way, so the answer needs no other evidence.
-            a = Path(tok).resolve()
-            try:
-                rel = a.relative_to(Path(self.root).resolve())
-            except ValueError:
-                return str(a)            # outside the tree: not ours to make
-            text = rel.as_posix()
-            return TREE if text == '.' else f'{TREE}/{text}'
-        cand = Path(tok if tok.startswith('/') else self.build / tok)
-        try:
-            resolved = cand.resolve()
-        except OSError:
-            return escape_tree(tok, self.root)
-        if str(resolved) in self.produced:
-            return self.in_tree_space(resolved)
-        # Not produced: it is READ, so it keeps naming the capture tree.
-        return str(resolved) if cand.is_absolute() else tok
-
 
 # ── the compile half ──────────────────────────────────────────
 
