@@ -325,18 +325,35 @@ def _inner_source(dest: Path) -> Path:
 
 
 def _declared(value: str | None, src: Path) -> Path | None:
-    """A declaration path from the command line, resolved against the tree.
+    """A declaration path from the command line, as the caller meant it.
 
-    The caller names it once, before the checkout is laid down, so a relative
-    path cannot be resolved yet.  It is resolved HERE, against the project's
-    own source, because that is where a project keeps the fact it declares
-    about itself — and the fact must travel with the project, not with the
-    benchmark folder the run happens to be driven from.
+    A path argument on a command line means what it means everywhere else —
+    relative to the CURRENT directory.  But a facts file is also expected to
+    travel beside the project it describes, so when the CWD-relative spelling
+    names nothing the project-relative one is tried.
+
+    Resolution only; whether the file is THERE is checked where it is used, so
+    this stays a pure naming function.
     """
     if not value:
         return None
     p = Path(value)
-    return p if p.is_absolute() else (src / p)
+    if p.is_absolute():
+        return p
+    return p if p.exists() else (src / p)
+
+
+def _require_present(path: Path | None, what: str) -> Path | None:
+    """Refuse a declared file that is not there, by name.
+
+    Without this the missing path surfaces as a traceback from inside the
+    capture, which says where the read failed and nothing about the fact that
+    the caller's argument named no file.
+    """
+    if path is not None and not path.is_file():
+        raise FetchError(
+            f'{what} names no file: {path} does not exist')
+    return path
 
 
 def main(argv=None) -> int:
@@ -450,8 +467,11 @@ def main(argv=None) -> int:
         print('  native build + verify: OK')
         return prove_legal(dest, src, src / args.tree_subdir, number,
                            dest.name.split('-', 1)[-1], remedies,
-                           facts=_declared(args.facts, src),
-                           declaration=_declared(args.declaration, src))
+                           facts=_require_present(
+                               _declared(args.facts, src), '--facts'),
+                           declaration=_require_present(
+                               _declared(args.declaration, src),
+                               '--declaration'))
 
     src_name = args.name or Path(args.source.rstrip('/')).stem
     src_name = src_name[:-4] if src_name.endswith('.git') else src_name
@@ -478,8 +498,11 @@ def main(argv=None) -> int:
         return 1
     print('  native build + verify: OK')
     return prove_legal(dest, src, src / args.tree_subdir, n, src_name,
-                       remedies, facts=_declared(args.facts, src),
-                       declaration=_declared(args.declaration, src))
+                       remedies,
+                       facts=_require_present(
+                           _declared(args.facts, src), '--facts'),
+                       declaration=_require_present(
+                           _declared(args.declaration, src), '--declaration'))
 
 
 if __name__ == '__main__':

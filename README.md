@@ -44,7 +44,12 @@ stale comment does.
    unit by its identity rather than by the file that happens to hold it. This
    repo does not convert anything — it reads a build and REPLAYS it, so a
    unit's language is just what it is, never a form to flip.
-4. **Do not guess.** Ambiguity is *refused*, never silently resolved: many
+4. **The protocol CONTAINS a compile database; it is not one.** The file is a
+   JSON object whose `compile_commands` element holds the entries, because a
+   real cc loader is a strict whitelist and all-or-nothing: one entry carrying
+   `stem`/`language`/`output` makes clangd reject the ENTIRE file. A valid cc
+   is an export (`to_cc`, which drops every field cc does not define).
+5. **Do not guess.** Ambiguity is *refused*, never silently resolved: many
    candidate case declarations (would verify against a neighbour's cases),
    stem collisions (would drop a unit), a make `$(shell)` source nothing
    produces, a state form the protocol does not carry.
@@ -56,7 +61,7 @@ stale comment does.
 ```
 protocolize/
   tree_anchor.py        ${TREE} placeholder: expand / escape / validate (bare $ refused)
-  compile_commands.py   read a compile database (layer 1; a protocol is its superset)
+  compile_commands.py   read a compile database; a protocol CONTAINS one
   output_layout.py      output-directory rule; repo root; longest owning root
   private_protocol.py   build-protocol schema + problems() + canonical_stem
   verification_plan.py  verification-protocol schema + problems()

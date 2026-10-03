@@ -13,16 +13,25 @@ database:
 * what the LINK products are, what goes into each, and in what order;
 * which sources have to be GENERATED before any of it can compile.
 
-So this is the compile database as a **superset** rather than a second file
-beside it.  On disk it IS a compile database: a JSON **array** whose elements
-are the compile entries, each carrying the four standard fields plus the
-extras below, and one final node carrying the sections a compile database
-cannot express.  A cc-only consumer reads the array directly and ignores what
-it does not know (:meth:`CompileEntry.as_compile_command` is the four-field
-view), and a plain ``compile_commands.json`` is the legal weak form of a
-protocol (:meth:`Protocol.from_compile_commands`) whose compilation half is
-exact and whose products half is empty — so a consumer that needs a link line
-fails loudly instead of inventing one.
+So this is the compile database as ONE ELEMENT of a larger object rather than
+a second file beside it.  On disk it is a JSON **object** whose
+``compile_commands`` element is the compile entries — each carrying the fields
+cc defines plus the extras below — and whose other keys carry the sections a
+compile database cannot express.  A plain ``compile_commands.json`` is still
+the legal weak form of a protocol
+(:meth:`Protocol.from_compile_commands`), whose compilation half is exact and
+whose products half is empty — so a consumer that needs a link line fails
+loudly instead of inventing one.
+
+It is NOT a compile database itself, and an earlier version of this file
+claimed it was (a bare array of entries, on the theory that a cc consumer skips
+what it does not recognise).  Measured against clangd 18.1.3, that theory is
+false: the loader is a strict WHITELIST and all-or-nothing, so ONE entry
+carrying `stem`, `language` or `output` makes it reject the ENTIRETY of the
+file — the clean entries beside it included.  A valid compile database is
+therefore an EXPORT (:meth:`Protocol.to_cc`), which drops every field cc does
+not define, and :meth:`CompileEntry.as_compile_command` is the same four-field
+view of a single entry.
 
 The concept the flow side rests on is the **extension-independent stem**
 (:func:`canonical_stem`).  Flipping a unit between its Fortran and C++ forms
@@ -54,11 +63,22 @@ from protocolize.tree_anchor import (TREE, ProtocolError, capture_tree,  # noqa:
 #: a build that is subtly not what the file describes.
 PROTOCOL_VERSION = 1
 
-#: The key that marks the ONE array element carrying the protocol's own
-#: sections.  The protocol is a compile_commands.json ARRAY, and a compile
-#: entry never has this key, so the marker is unambiguous — and a cc-only
-#: consumer reads every OTHER element and skips this one.
+#: The key that marked, in the protocol's EARLIER array shape, the one element
+#: carrying the sections.  It is still how that shape is told apart from a
+#: plain compile database, which is why the name survives: an array whose
+#: entries carry this key somewhere is an old protocol, and one without it is a
+#: compile database.  Nothing writes it as an array element any more.
 _NODE_KEY = 'protocol_version'
+
+#: The keys a ``compile_commands.json`` entry is DEFINED to carry.  Anything
+#: else is the protocol's own and is dropped by :func:`_cc_entry`.
+_CC_KEYS = ('directory', 'file', 'command', 'arguments')
+
+
+def _cc_entry(entry: 'CompileEntry') -> dict:
+    """*entry* reduced to what a compile database defines, and nothing else."""
+    full = entry.to_json()
+    return {k: full[k] for k in _CC_KEYS if k in full}
 
 _ANY_SUFFIX = re.compile(r'\.[A-Za-z][A-Za-z0-9]*$')
 
@@ -424,19 +444,23 @@ class Protocol:
 
     # ── serde ─────────────────────────────────────────────────
     def to_cc(self) -> list:
-        """The protocol as a bare ``compile_commands.json`` ARRAY.
+        """This protocol as a plain ``compile_commands.json`` ARRAY.
 
-        This is the file :meth:`save` writes, and the shape is the point: a
-        cc-only consumer reads it DIRECTLY.  Every element before the last is
-        a compile entry — the four standard fields plus this protocol's
-        extras, which such a consumer ignores — and the LAST element is the
-        node (:data:`_NODE_KEY`) carrying the sections a compile database
-        cannot express (products, generated inputs, prepare, build, tests).
-        A reader that wants only a compile database stops at the entries.
+        EVERY field is dropped except the ones a compile database DEFINES —
+        ``directory``, ``file``, and ``command``/``arguments``.
+
+        That filtering is the whole job, and it is not cosmetic.  Measured
+        against clangd 18.1.3: a compile-database loader is a strict WHITELIST
+        and all-or-nothing.  One entry carrying `stem` (or `language`, or
+        `output`) makes it reject the ENTIRE file with ``Unknown key`` — the
+        clean entries beside it become unreadable too.
+
+        So the stored form is not a compile database and does not claim to be
+        one (see :meth:`to_json`).  This is the EXPORT, and it is honest about
+        being a projection: what it returns is valid cc; what is on disk is the
+        protocol.
         """
-        node = self.to_json()
-        del node['compilation']
-        return [e.to_json() for e in self.compilation] + [node]
+        return [_cc_entry(e) for e in self.compilation]
 
     def to_json(self) -> dict:
         # EVERY top-level section is always written, empty ones as [].  The
@@ -446,10 +470,16 @@ class Protocol:
         # measured: NASTRAN omitted `generated_inputs`/`own_roots`/`tests`
         # entirely while LAPACK carried all three, so a consumer could not
         # tell "this corpus has none" from "this reader did not look".
+        #
+        # `compile_commands` is ONE ELEMENT of this object, not the object
+        # itself.  A compile database is something this protocol CONTAINS and
+        # can export (:meth:`to_cc`), not something it IS: the entries carry
+        # fields cc does not define (`stem`, `language`, `output`), and a
+        # cc loader rejects a file over any one of them.
         return {
             'protocol_version': self.version,
             'capture': dict(self.capture or {}),
-            'compilation': [e.to_json() for e in self.compilation],
+            'compile_commands': [e.to_json() for e in self.compilation],
             'generated_inputs': [dict(g) for g in self.generated_inputs],
             'products': [p.to_json() for p in self.products],
             'build': normalise_build(self.build),
@@ -464,14 +494,12 @@ class Protocol:
     def from_json(cls, d: 'dict | list') -> 'Protocol':
         """Read a protocol from EITHER shape it is written in.
 
-        The on-disk shape is a bare ``compile_commands.json`` ARRAY
-        (:meth:`save`): every element before the last is a compile entry, and
-        the last is the node (:data:`_NODE_KEY`) carrying the sections a
-        compile database cannot.  A consumer that knows only a compile
-        database reads such a file directly, and a plain compile database — an
-        array with NO node — is the legal weak form.  The OBJECT shape is read
-        too, so a protocol captured before the array became the on-disk form
-        still loads.
+        The on-disk shape is an OBJECT whose ``compile_commands`` element is
+        the compile entries and whose other keys are the sections a compile
+        database cannot express.  The OLDER array shape still reads — entries
+        followed by a node — so every protocol captured before the change
+        loads without being re-admitted, and a bare compile database (an array
+        with NO node) is still the legal weak form.
         """
         if isinstance(d, list):
             node = next((e for e in d
@@ -479,11 +507,15 @@ class Protocol:
             entries = [e for e in d if e is not node]
             if node is None:             # a plain compile_commands.json
                 return cls.from_compile_commands(entries)
-            return cls._from_object({**node, 'compilation': entries})
+            return cls._from_object({**node, 'compile_commands': entries})
         if not isinstance(d, dict):
             raise ProtocolError(
-                f'protocol must be an array or an object, got '
+                f'protocol must be an object or an array, got '
                 f'{type(d).__name__}')
+        # `compilation` is the pre-`compile_commands` name of the same
+        # element, read for the same reason the array shape is.
+        if 'compile_commands' not in d and 'compilation' in d:
+            d = {**d, 'compile_commands': d['compilation']}
         return cls._from_object(d)
 
     @classmethod
@@ -493,9 +525,10 @@ class Protocol:
         if ver != PROTOCOL_VERSION:
             raise ProtocolError(
                 f'protocol_version {ver!r} is not {PROTOCOL_VERSION}')
-        comp = d.get('compilation')
+        comp = d.get('compile_commands')
         if comp is None:
-            raise ProtocolError("protocol has no 'compilation' section")
+            raise ProtocolError(
+                "protocol has no 'compile_commands' section")
         return cls(
             compilation=[CompileEntry.from_json(e) for e in comp],
             products=[Product.from_json(p) for p in d.get('products') or ()],
@@ -511,15 +544,15 @@ class Protocol:
         )
 
     def save(self, path: Path | str) -> None:
-        """Write the protocol as a ``compile_commands.json`` array, in plain JSON.
+        """Write the protocol as a JSON OBJECT, in plain JSON.
 
         PLAIN and ungzipped even where the path says otherwise: a gzipped file
-        is not one a cc consumer can read, and being readable as cc is the
-        point of the shape.  (A protocol committed gzipped still LOADS — see
-        :meth:`load` — this only governs what is written.)
+        is not one a readable-by-eye artifact should be.  (A protocol committed
+        gzipped still LOADS — see :meth:`load` — this only governs what is
+        written.)
         """
         Path(path).write_text(
-            json.dumps(self.to_cc(), indent=1, sort_keys=False),
+            json.dumps(self.to_json(), indent=1, sort_keys=False),
             encoding='utf-8')
 
     @classmethod

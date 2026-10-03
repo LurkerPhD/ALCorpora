@@ -50,17 +50,23 @@ protocol from a real project is the best example. In brief:
 ```
 {
   "protocol_version": 1,
-  "compilation": [ {directory, command, file, output,
-                    stem, language, provides, uses, preprocess}, ... ],
+  "compile_commands": [ {directory, command, file, output,
+                         stem, language, provides, uses, preprocess}, ... ],
   "generated_inputs": [ {output, command, depends}, ... ],
   "products":         [ {output, kind, stems, libs, driver}, ... ]
 }
 ```
 
-The first four fields of a compilation entry are the standard
-`compile_commands.json` fields, unchanged: a consumer that knows only that
-format can read this file. Everything else answers questions a compile
-database cannot, and each one is load-bearing:
+A compile database is ONE ELEMENT here, not the file. `compile_commands`
+holds the entries, and each entry carries the standard fields PLUS the ones
+below — so the stored entries are deliberately NOT valid cc. Measured: clangd
+and clang-check load a compile database from a strict whitelist and reject the
+ENTIRE file over one unknown key, so an entry carrying `stem` makes every
+entry beside it unreadable too. A valid compile database is an EXPORT
+(`Protocol.to_cc`, which drops everything cc does not define).
+
+Everything beyond the standard fields answers questions a compile database
+cannot, and each one is load-bearing:
 
 **`stem`** — the unit's identity with the extension removed and case kept.
 It is the protocol's key: a product names its inputs as stems, so the link

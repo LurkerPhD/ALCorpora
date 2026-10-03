@@ -1,174 +1,210 @@
-[
-  {
-    "_README": [
-      "THE BUILD PROTOCOL. This file IS a compile_commands.json -- a JSON",
-      "ARRAY of compile entries -- so any cc consumer reads it directly. Every",
-      "element before the last is a compile entry (the four standard fields",
-      "plus this protocol's extras, which a cc consumer ignores); the LAST",
-      "element is the NODE below, marked `protocol_version` (a compile entry",
-      "never has that key), carrying the sections a compile database cannot.",
-      "",
-      "EXTRA ENTRIES ARE PERMITTED; THE ARRAY STRUCTURE IS NOT DISTURBED.",
-      "",
-      "DESIGN RULE: everything is a RECORDING, replayed verbatim. The protocol",
-      "does not say 'these flags' and let a generator reassemble a command --",
-      "it records the command the build ran. Reassembling drifts, silently:",
-      "measured on a real project compiled with -fvisibility=hidden, letting",
-      "CMake rebuild the link lines produced -rdynamic and a LOCALISED main in",
-      "every executable, and 19 products differed while their code was",
-      "identical. So a unit, a product and a generated source each carry the",
-      "exact command that produces it, and the exact directory it runs in.",
-      "",
-      "TWO SPELLINGS OF A PATH, load-bearing:",
-      "  * under ${TREE} -- the replay MAKES it. It travels with the protocol.",
-      "    This includes a WORKING DIRECTORY: the build tree is recreated, so",
-      "    a command's cwd is spelled ${TREE}/... even though nothing",
-      "    'produces' a directory.",
-      "  * ABSOLUTE -- the replay only READS it (the project's own sources).",
-      "    It does not move and must not be rewritten.",
-      "`$` is reserved: a literal dollar is `$$`; a bare `$` is refused.",
-      "",
-      "A STEM MAY APPEAR TWICE, WHEN THE LANGUAGES DIFFER. A Fortran module and",
-      "the C it binds (`x.F90` + `x.c`) are two translation units with one stem;",
-      "a product's member (a stem) then resolves to BOTH objects. Two entries with",
-      "the same stem AND the same language is the error, not this.",
-      "The `directory` and `command` are the TOOLCHAIN's own -- nothing here is",
-      "CMake-specific. A make build records e.g. directory `${TREE}/source/mis`,",
-      "command `gfortran -g -std=legacy -c -o alg13.o alg13.f`. A make build whose",
-      "tree is IN SOURCE still spells its directory under `${TREE}`, so a replay",
-      "runs there rather than in the project it is proving."
-    ],
-    "directory": "${TREE}/build",
-    "_directory": "The directory the command ran in. The command is replayed THERE, and any relative operand in it is relative to this.",
-    "command": "/usr/bin/gcc -O2 -c ${TREE}/SRC/a.c -o CMakeFiles/x.dir/a.c.o",
-    "_command": "EXACTLY what the build ran, with every path under the tree re-rooted at ${TREE} and every path outside it left absolute. This is the authority -- a replay runs it, it does not re-derive flags from it.",
-    "file": "${TREE}/SRC/a.c",
-    "_file": "The unit's source. Under ${TREE} when the build GENERATED it; absolute when the project ships it.",
-    "output": "CMakeFiles/x.dir/a.c.o",
-    "_output": "The object the command writes, as the build spelled it: RELATIVE to `directory` (the same convention cc uses). A replay reads the object's absolute path off this.",
-    "stem": "SRC/a",
-    "_stem": "The unit's identity: ONE trailing extension removed, case kept. The protocol's key -- a product names its members as stems.",
-    "language": "c",
-    "_language": "The source's language, free-form ('c', 'cpp', 'fortran', ...). What a consumer needs to know to build the unit; NOT an identity.",
-    "provides": [],
-    "_provides": "Modules this unit DEFINES, as the SOURCE spells them (case kept). Omitted when empty.",
-    "uses": [
-      "m_alpha"
-    ],
-    "_uses": "Modules this unit USES, as spelled. Omitted when empty. Matching is case-insensitive where a consumer builds the graph.",
-    "preprocess": "",
-    "_preprocess": "The PREPROCESS command, when the build compiles the unit in TWO steps. A replay runs this first, then `command` (which consumes the intermediate this makes). Omitted when the build has no separate step."
+{
+  "protocol_version": 1,
+  "capture": {
+    "tree": "/absolute/path/the/${TREE} placeholders denote",
+    "layout": "out_of_source"
   },
-  {
-    "directory": "${TREE}/build",
-    "command": "/usr/bin/gcc -O2 -c ${TREE}/SRC/b.c -o CMakeFiles/x.dir/b.c.o",
-    "file": "${TREE}/SRC/b.c",
-    "output": "CMakeFiles/x.dir/b.c.o",
-    "stem": "SRC/b",
-    "language": "c"
-  },
-  {
-    "_README": [
-      "THE NODE. The last element of the array, marked `protocol_version`.",
-      "It carries everything a compile database cannot express. A cc-only",
-      "consumer skips it (it has no `file`/`command`).",
-      "",
-      "A section with nothing to say is `[]` (or `{}`), never omitted: the",
-      "shape is the contract, and a section that appears only when a project",
-      "happens to use it makes two projects produce two shapes for the same",
-      "kind of fact."
-    ],
-    "protocol_version": 1,
-    "_protocol_version": "The only version this consumer reads. A file from another version is refused, not coerced.",
-    "comment": "onboarded from <the directory this was captured from>",
-    "capture": {
-      "tree": "/absolute/path/the/${TREE} placeholders denote",
-      "layout": "out_of_source"
+  "compile_commands": [
+    {
+      "_README": [
+        "THE BUILD PROTOCOL. This file IS a compile_commands.json -- a JSON",
+        "ARRAY of compile entries -- so any cc consumer reads it directly. Every",
+        "element before the last is a compile entry (the four standard fields",
+        "plus this protocol's extras, which a cc consumer ignores); the LAST",
+        "element is the NODE below, marked `protocol_version` (a compile entry",
+        "never has that key), carrying the sections a compile database cannot.",
+        "",
+        "EXTRA ENTRIES ARE PERMITTED; THE ARRAY STRUCTURE IS NOT DISTURBED.",
+        "",
+        "DESIGN RULE: everything is a RECORDING, replayed verbatim. The protocol",
+        "does not say 'these flags' and let a generator reassemble a command --",
+        "it records the command the build ran. Reassembling drifts, silently:",
+        "measured on a real project compiled with -fvisibility=hidden, letting",
+        "CMake rebuild the link lines produced -rdynamic and a LOCALISED main in",
+        "every executable, and 19 products differed while their code was",
+        "identical. So a unit, a product and a generated source each carry the",
+        "exact command that produces it, and the exact directory it runs in.",
+        "",
+        "TWO SPELLINGS OF A PATH, load-bearing:",
+        "  * under ${TREE} -- the replay MAKES it. It travels with the protocol.",
+        "    This includes a WORKING DIRECTORY: the build tree is recreated, so",
+        "    a command's cwd is spelled ${TREE}/... even though nothing",
+        "    'produces' a directory.",
+        "  * ABSOLUTE -- the replay only READS it (the project's own sources).",
+        "    It does not move and must not be rewritten.",
+        "`$` is reserved: a literal dollar is `$$`; a bare `$` is refused.",
+        "",
+        "A STEM MAY APPEAR TWICE, WHEN THE LANGUAGES DIFFER. A Fortran module and",
+        "the C it binds (`x.F90` + `x.c`) are two translation units with one stem;",
+        "a product's member (a stem) then resolves to BOTH objects. Two entries with",
+        "the same stem AND the same language is the error, not this.",
+        "The `directory` and `command` are the TOOLCHAIN's own -- nothing here is",
+        "CMake-specific. A make build records e.g. directory `${TREE}/source/mis`,",
+        "command `gfortran -g -std=legacy -c -o alg13.o alg13.f`. A make build whose",
+        "tree is IN SOURCE still spells its directory under `${TREE}`, so a replay",
+        "runs there rather than in the project it is proving."
+      ],
+      "directory": "${TREE}/build",
+      "_directory": "The directory the command ran in. The command is replayed THERE, and any relative operand in it is relative to this.",
+      "command": "/usr/bin/gcc -O2 -c ${TREE}/SRC/a.c -o CMakeFiles/x.dir/a.c.o",
+      "_command": "EXACTLY what the build ran, with every path under the tree re-rooted at ${TREE} and every path outside it left absolute. This is the authority -- a replay runs it, it does not re-derive flags from it.",
+      "file": "${TREE}/SRC/a.c",
+      "_file": "The unit's source. Under ${TREE} when the build GENERATED it; absolute when the project ships it.",
+      "output": "CMakeFiles/x.dir/a.c.o",
+      "_output": "The object the command writes, as the build spelled it: RELATIVE to `directory` (the same convention cc uses). A replay reads the object's absolute path off this.",
+      "stem": "SRC/a",
+      "_stem": "The unit's identity: ONE trailing extension removed, case kept. The protocol's key -- a product names its members as stems.",
+      "language": "c",
+      "_language": "The source's language, free-form ('c', 'cpp', 'fortran', ...). What a consumer needs to know to build the unit; NOT an identity.",
+      "provides": [],
+      "_provides": "Modules this unit DEFINES, as the SOURCE spells them (case kept). Omitted when empty.",
+      "uses": [
+        "m_alpha"
+      ],
+      "_uses": "Modules this unit USES, as spelled. Omitted when empty. Matching is case-insensitive where a consumer builds the graph.",
+      "preprocess": "",
+      "_preprocess": "The PREPROCESS command, when the build compiles the unit in TWO steps. A replay runs this first, then `command` (which consumes the intermediate this makes). Omitted when the build has no separate step."
     },
-    "_capture": "'tree' is what ${TREE} means (the BUILD tree the replay recreates); 'layout' is 'in_source' or 'out_of_source'. Recorded, never re-derived -- a wrong guess re-roots every generated source.",
-    "products": [
-      {
-        "output": "${TREE}/bin/xlintstc",
-        "kind": "exe",
-        "_kind": "'exe' | 'archive'. An 'archive' is a static library; set 'shared' for a .so/.dylib.",
-        "shared": false,
-        "stems": [
-          "SRC/a",
-          "SRC/b"
-        ],
-        "_stems": "What goes INTO this product, by STEM — the edge a compile database cannot carry, and the only reason a consumer can ORDER the replay instead of running the commands in a heap. ONE field for both kinds: an archive's members and an executable's own translation units are the same relation, and `kind` already says which reading applies. The value is a stem (the value's own name), never a file name — a member spelled `isamax.f.o` pins the link line to one form, so a unit later compiled to C++ would drop out of the archive while the line still asked for it. Contrast `libs`, which is a PATH because the library may be one this protocol does not build and has no stem for.",
-        "libs": [
-          "${TREE}/lib/libx.a"
-        ],
-        "_libs": "Libraries it links, in ORDER (ld resolves left to right). A library this protocol ALSO produces is linked by its output path; a foreign one keeps its path.",
-        "driver": "gcc",
-        "command": "/usr/bin/gcc CMakeFiles/x.dir/a.c.o ... -o ${TREE}/bin/xlintstc",
-        "_command": "The EXACT link/archive command, replayed verbatim in `directory`. Nothing about the link line is re-derived (see the design rule).",
-        "directory": "${TREE}/build",
-        "_directory": "The directory the link ran in; its relative operands are relative to this.",
-        "flags": [],
-        "_shared": "true when an 'archive' is a SHARED library (.so/.dylib). Load-bearing: linking a shared library leaves its symbols UNDEFINED in the consumer, linking a static one pulls them IN, so replaying a shared library as static changes every consumer's defined symbols."
-      }
-    ],
-    "_products": "What the build LINKS. A replay runs each product's `command`; `objects`/`members`/`libs` say what it DEPENDS on, so the objects are built first.",
-    "generated_inputs": [
-      {
-        "output": "${TREE}/BLAS/SRC/a_64.c",
-        "command": "cd ${TREE}/BLAS/SRC && cmake -DINPUT=... -P gen.cmake",
-        "_command": "A SHELL LINE, replayed verbatim. It makes `output`.",
-        "depends": [
-          "/abs/gen.cmake"
-        ]
-      }
-    ],
-    "_generated_inputs": "Sources the build MAKES. A replay must reproduce them or it compiles a file that does not exist. Empty [] when the build generates nothing.",
-    "own_roots": [],
-    "_own_roots": "The tree-relative directories that are the project's OWN units, when its build pulls in third-party subprojects. Empty [] means every compiled unit is the project's.",
-    "tests": [
-      {
-        "name": "runs",
-        "command": [
-          "${TREE}/bin/xlintstc"
-        ],
-        "working_directory": "${TREE}/build",
-        "depends": []
-      }
-    ],
-    "_tests": "The build system's OWN test registrations, as it reports them (ctest --show-only=json-v1). A replay re-registers them so the built tree is RUNNABLE the way the project runs it. Empty [] when none.",
-    "support_files": [
-      {
-        "path": "TESTING/x.in",
-        "content": "..."
-      }
-    ],
-    "_support_files": "Files a run READS that are neither compiled nor generated, carried as CONTENT. Empty [] when none.",
-    "prepare": [
-      {
-        "op": "submodule",
-        "check": {
-          "path": "submodules/lib"
-        },
-        "run": "git submodule update --init submodules/lib"
+    {
+      "directory": "${TREE}/build",
+      "command": "/usr/bin/gcc -O2 -c ${TREE}/SRC/b.c -o CMakeFiles/x.dir/b.c.o",
+      "file": "${TREE}/SRC/b.c",
+      "output": "CMakeFiles/x.dir/b.c.o",
+      "stem": "SRC/b",
+      "language": "c"
+    }
+  ],
+  "generated_inputs": [
+    {
+      "output": "${TREE}/BLAS/SRC/a_64.c",
+      "command": "cd ${TREE}/BLAS/SRC && cmake -DINPUT=... -P gen.cmake",
+      "_command": "A SHELL LINE, replayed verbatim. It makes `output`.",
+      "depends": [
+        "/abs/gen.cmake"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "output": "${TREE}/bin/xlintstc",
+      "kind": "exe",
+      "_kind": "'exe' | 'archive'. An 'archive' is a static library; set 'shared' for a .so/.dylib.",
+      "shared": false,
+      "stems": [
+        "SRC/a",
+        "SRC/b"
+      ],
+      "_stems": "What goes INTO this product, by STEM — the edge a compile database cannot carry, and the only reason a consumer can ORDER the replay instead of running the commands in a heap. ONE field for both kinds: an archive's members and an executable's own translation units are the same relation, and `kind` already says which reading applies. The value is a stem (the value's own name), never a file name — a member spelled `isamax.f.o` pins the link line to one form, so a unit later compiled to C++ would drop out of the archive while the line still asked for it. Contrast `libs`, which is a PATH because the library may be one this protocol does not build and has no stem for.",
+      "libs": [
+        "${TREE}/lib/libx.a"
+      ],
+      "_libs": "Libraries it links, in ORDER (ld resolves left to right). A library this protocol ALSO produces is linked by its output path; a foreign one keeps its path.",
+      "driver": "gcc",
+      "command": "/usr/bin/gcc CMakeFiles/x.dir/a.c.o ... -o ${TREE}/bin/xlintstc",
+      "_command": "The EXACT link/archive command, replayed verbatim in `directory`. Nothing about the link line is re-derived (see the design rule).",
+      "directory": "${TREE}/build",
+      "_directory": "The directory the link ran in; its relative operands are relative to this.",
+      "flags": [],
+      "_shared": "true when an 'archive' is a SHARED library (.so/.dylib). Load-bearing: linking a shared library leaves its symbols UNDEFINED in the consumer, linking a static one pulls them IN, so replaying a shared library as static changes every consumer's defined symbols."
+    }
+  ],
+  "build": {},
+  "prepare": [
+    {
+      "op": "submodule",
+      "check": {
+        "path": "submodules/lib"
       },
-      {
-        "_README": [
-          "A PATCH op: a change the source needs to build on THIS platform/",
-          "toolchain, written so a fresh checkout reproduces it and a repeat pays",
-          "nothing. `check` is a SHELL line that exits 0 when the fix is ALREADY",
-          "there; `run` applies it. MEASURED on a real project: its Makefile",
-          "spelled target paths with backslashes (Windows) and its 1970s Fortran",
-          "used a dialect today's gfortran rejects -- both are prepare ops, so the",
-          "recorded protocol rebuilds from a clean checkout."
-        ],
-        "op": "patch",
-        "check": {
-          "shell": "grep -q -- -fallow-argument-mismatch Makefile"
-        },
-        "run": "sed -i 's|^FFLAGS|FFLAGS += -fallow-argument-mismatch\\nFFLAGS|' Makefile"
-      }
-    ],
-    "_prepare": "Infrastructure the project needs ONCE (a submodule fetch, a patch, an overlay). Each carries a `check` so it runs AT MOST ONCE. Empty [] when none. Each op is IDEMPOTENT: it carries a `check` (a shell line, or a `{path, exists}` predicate) that exits 0 when it is already done. Ops that patch the source are how a project that needs a platform/toolchain fix stays reproducible.",
-    "build": {},
-    "_build": "Toolchain-specific extras a CONSUMER may read (an optimization remap, module/include directories, policy flags). All OPTIONAL; {} for a project that declares none. NOTHING in this tool branches on them."
-  }
-]
+      "run": "git submodule update --init submodules/lib"
+    },
+    {
+      "_README": [
+        "A PATCH op: a change the source needs to build on THIS platform/",
+        "toolchain, written so a fresh checkout reproduces it and a repeat pays",
+        "nothing. `check` is a SHELL line that exits 0 when the fix is ALREADY",
+        "there; `run` applies it. MEASURED on a real project: its Makefile",
+        "spelled target paths with backslashes (Windows) and its 1970s Fortran",
+        "used a dialect today's gfortran rejects -- both are prepare ops, so the",
+        "recorded protocol rebuilds from a clean checkout."
+      ],
+      "op": "patch",
+      "check": {
+        "shell": "grep -q -- -fallow-argument-mismatch Makefile"
+      },
+      "run": "sed -i 's|^FFLAGS|FFLAGS += -fallow-argument-mismatch\\nFFLAGS|' Makefile"
+    }
+  ],
+  "own_roots": [],
+  "tests": [
+    {
+      "name": "runs",
+      "command": [
+        "${TREE}/bin/xlintstc"
+      ],
+      "working_directory": "${TREE}/build",
+      "depends": []
+    }
+  ],
+  "support_files": [
+    {
+      "path": "TESTING/x.in",
+      "content": "..."
+    }
+  ],
+  "comment": "onboarded from <the directory this was captured from>",
+  "_README": [
+    "THE BUILD PROTOCOL. It is a JSON OBJECT, and a compile database is one",
+    "ELEMENT of it (`compile_commands`), not the whole file.",
+    "",
+    "WHY NOT A BARE ARRAY. The earlier shape WAS a bare array of compile",
+    "entries, on the theory that a cc consumer skips an element it does not",
+    "recognise. Measured against clangd 18.1.3, that theory is false: the",
+    "loader is a strict WHITELIST and ALL-OR-NOTHING. One entry carrying a",
+    "field cc does not define -- `stem`, `language`, `output` -- makes it",
+    "reject the ENTIRE file (`Unknown key`), so the clean entries beside it",
+    "become unreadable too. `clang-check` agrees. The protocol therefore does",
+    "not claim to BE a compile database; it CONTAINS one, and exports a valid",
+    "one on request (`to_cc`, which drops every field cc does not define).",
+    "",
+    "EVERY SECTION IS ALWAYS WRITTEN, empty ones as [] or {}. The shape is a",
+    "contract: a section that appears only when a corpus happens to use it",
+    "makes two corpora produce two shapes for the same kind of fact.",
+    "",
+    "DESIGN RULE: everything is a RECORDING, replayed verbatim. The protocol",
+    "does not say 'these flags' and let a generator reassemble a command --",
+    "it records the command the build ran. Reassembling drifts, silently:",
+    "measured on a real project compiled with -fvisibility=hidden, letting",
+    "CMake rebuild the link lines produced -rdynamic and a LOCALISED main in",
+    "every executable, and 19 products differed while their code was",
+    "identical. So a unit, a product and a generated source each carry the",
+    "exact command that produces it, and the exact directory it runs in.",
+    "",
+    "TWO SPELLINGS OF A PATH, load-bearing:",
+    "  * under ${TREE} -- the replay MAKES it. It travels with the protocol.",
+    "    This includes a WORKING DIRECTORY: the build tree is recreated, so",
+    "    a command's cwd is spelled ${TREE}/... even though nothing",
+    "    'produces' a directory.",
+    "  * ABSOLUTE -- the replay only READS it (the project's own sources).",
+    "    It does not move and must not be rewritten.",
+    "`$` is reserved: a literal dollar is `$$`; a bare `$` is refused.",
+    "",
+    "A STEM MAY APPEAR TWICE, WHEN THE LANGUAGES DIFFER. A Fortran module and",
+    "the C it binds (`x.F90` + `x.c`) are two translation units with one stem;",
+    "a product's member (a stem) then resolves to BOTH objects. Two entries with",
+    "the same stem AND the same language is the error, not this.",
+    "The `directory` and `command` are the TOOLCHAIN's own -- nothing here is",
+    "CMake-specific. A make build records e.g. directory `${TREE}/source/mis`,",
+    "command `gfortran -g -std=legacy -c -o alg13.o alg13.f`. A make build whose",
+    "tree is IN SOURCE still spells its directory under `${TREE}`, so a replay",
+    "runs there rather than in the project it is proving."
+  ],
+  "_protocol_version": "The only version this consumer reads. A file from another version is refused, not coerced.",
+  "_capture": "'tree' is what ${TREE} means (the BUILD tree the replay recreates); 'layout' is 'in_source' or 'out_of_source'. Recorded, never re-derived -- a wrong guess re-roots every generated source.",
+  "_products": "What the build LINKS. A replay runs each product's `command`; `objects`/`members`/`libs` say what it DEPENDS on, so the objects are built first.",
+  "_generated_inputs": "Sources the build MAKES. A replay must reproduce them or it compiles a file that does not exist. Empty [] when the build generates nothing.",
+  "_own_roots": "The tree-relative directories that are the project's OWN units, when its build pulls in third-party subprojects. Empty [] means every compiled unit is the project's.",
+  "_tests": "The build system's OWN test registrations, as it reports them (ctest --show-only=json-v1). A replay re-registers them so the built tree is RUNNABLE the way the project runs it. Empty [] when none.",
+  "_support_files": "Files a run READS that are neither compiled nor generated, carried as CONTENT. Empty [] when none.",
+  "_prepare": "Infrastructure the project needs ONCE (a submodule fetch, a patch, an overlay). Each carries a `check` so it runs AT MOST ONCE. Empty [] when none. Each op is IDEMPOTENT: it carries a `check` (a shell line, or a `{path, exists}` predicate) that exits 0 when it is already done. Ops that patch the source are how a project that needs a platform/toolchain fix stays reproducible.",
+  "_build": "Toolchain-specific extras a CONSUMER may read (an optimization remap, module/include directories, policy flags). All OPTIONAL; {} for a project that declares none. NOTHING in this tool branches on them."
+}

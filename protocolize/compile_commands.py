@@ -97,9 +97,9 @@ def _entries_of(data: object) -> list:
     """The compile entries, from either shape this reader accepts.
 
     The standard format is a bare array.  The private protocol is an object
-    whose ``compilation`` holds that same array — it is a SUPERSET of this
-    format, so pointing the transpiler at a protocol must work by reading
-    this field and ignoring the rest, with no conversion step in between.
+    whose ``compile_commands`` element holds that same array, so pointing a
+    consumer at a protocol works by reading this field and ignoring the rest,
+    with no conversion step in between.
 
     Taking both here rather than at each call site is what keeps ONE reader:
     when the front end normalized and this function did not, the discover
@@ -108,12 +108,14 @@ def _entries_of(data: object) -> list:
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
-        comp = data.get('compilation')
-        if isinstance(comp, list):
-            return comp
+        # `compilation` is the element's earlier name and still reads.
+        for key in ('compile_commands', 'compilation'):
+            comp = data.get(key)
+            if isinstance(comp, list):
+                return comp
         raise ValueError(
-            "a JSON object with no 'compilation' array is neither a compile "
-            "database nor a protocol")
+            "a JSON object with no 'compile_commands' array is neither a "
+            "compile database nor a protocol")
     raise ValueError(f'expected a compile database or a protocol, '
                      f'got {type(data).__name__}')
 

@@ -37,7 +37,11 @@
 3. **stem 就是 unit 的身份**:去掉一个尾扩展名,大小写保留。产物用 stem 记它的成员,
    所以链接行按 unit 的身份引用它,而不是按恰好持有它的那个文件。本仓库**不做转换**
    ——它读入一个构建再**重放**它,所以 unit 的语言就是它的语言,从来不是一个可翻转的 form。
-4. **不许猜。** 歧义一律**拒绝**,绝不静默选一个:多个候选 case 声明(会拿邻居的
+4. **协议**内嵌**一份 compile database,但它本身不是。** 文件是一个 JSON 对象,
+   `compile_commands` 是其中一个元素:真实的 cc 加载器是严格白名单且全有或全无,
+   只要条目上多一个 `stem`/`language`/`output`,clangd 就**整份拒载**。合法的 cc
+   是**导出物**(`to_cc`,剥掉一切 cc 未定义的字段)。
+5. **不许猜。** 歧义一律**拒绝**,绝不静默选一个:多个候选 case 声明(会拿邻居的
    案例来验证本语料)、stem 冲突(会静默丢掉一个 unit)、make 的 `$(shell)` 源
    没有任何命令产出、state 要的 form 协议里没有。
 
@@ -48,7 +52,7 @@
 ```
 protocolize/
   tree_anchor.py        ${TREE} 占位符: expand / escape / 校验(裸 $ 拒绝)
-  compile_commands.py   读 compile database(layer 1;协议是它的超集)
+  compile_commands.py   读 compile database;协议**内嵌**一份
   output_layout.py      输出目录规则;repo root;longest owning root
   private_protocol.py   构建协议 schema + problems() + canonical_stem
   verification_plan.py  验证协议 schema + problems()
