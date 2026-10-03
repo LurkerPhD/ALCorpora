@@ -97,16 +97,29 @@ class Target:
 
     kind: str                     # 'product' | 'tree'
     product: str = ''
+    #: Where the thing under test may be, as BINDINGS, in search order.
+    #:
+    #: A product's directory is not one fixed place: a project's own build
+    #: puts it where its build system does, and a generated flat build puts
+    #: it under `<tree>/bin` — the SAME plan has to run against both (§B
+    #: self-verify runs it on the reference, then on the flat build).  So the
+    #: plan declares the CANDIDATES and the mechanism resolves by NAME, taking
+    #: the one that is there.  More than one hit is refused rather than picked
+    #: silently — same rule as everywhere else in this tool.
+    dirs: tuple[str, ...] = ()
 
     def to_json(self) -> dict:
         out: dict = {'kind': self.kind}
         if self.product:
             out['product'] = self.product
+        if self.dirs:
+            out['dirs'] = list(self.dirs)
         return out
 
     @classmethod
     def from_json(cls, d: dict) -> 'Target':
-        return cls(kind=d.get('kind', ''), product=d.get('product', ''))
+        return cls(kind=d.get('kind', ''), product=d.get('product', ''),
+                   dirs=tuple(d.get('dirs') or ()))
 
 
 @dataclass(frozen=True)
@@ -202,6 +215,12 @@ class VerificationPlan:
 
     plan_version: int = PLAN_VERSION
     target: Target = field(default_factory=lambda: Target(kind=''))
+    #: The build protocol this plan belongs to, as a name relative to the
+    #: plan (or a binding).  Declared rather than assumed: the old harness
+    #: hardcoded one project-named file, and a plan that has to be found by
+    #: guessing a name is a plan the mechanism is coupled to.  Empty means
+    #: the caller names it (the CLI's `--protocol`).
+    protocol: str = ''
     cases: dict = field(default_factory=dict)
     inputs: dict = field(default_factory=dict)
     staging: tuple[dict, ...] = ()
@@ -232,6 +251,7 @@ class VerificationPlan:
         return json.loads(json.dumps({
             'plan_version': self.plan_version,
             'target': self.target.to_json(),
+            'protocol': self.protocol,
             'cases': dict(self.cases),
             'inputs': dict(self.inputs),
             'staging': [dict(s) for s in self.staging],
@@ -260,6 +280,7 @@ class VerificationPlan:
         return cls(
             plan_version=PLAN_VERSION,
             target=Target.from_json(_require(d, 'target', 'plan')),
+            protocol=d.get('protocol', ''),
             cases=dict(_require(d, 'cases', 'plan')),
             inputs=dict(d.get('inputs', {})),
             staging=tuple(dict(s) for s in d.get('staging', ())),
@@ -354,6 +375,10 @@ class VerificationPlan:
                 'target.kind is "product" but target.product is empty: the '
                 'plan has to name which of the protocol\'s products is the '
                 'thing under test')
+        for i, d in enumerate(self.target.dirs):
+            why = self._binding_problem(d, f'target.dirs[{i}]')
+            if why:
+                bad.append(why)
 
         if self.run.kind not in ('process', 'suite'):
             bad.append(f'run.kind is {self.run.kind!r}, not "process" or '

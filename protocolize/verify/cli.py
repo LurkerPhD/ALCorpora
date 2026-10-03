@@ -29,52 +29,33 @@ PLAN_NAME = 'verification_plan.json'
 
 
 def _target(plan, build_dir: Path, exe: Path | None) -> Path | None:
-    """Where the product under test is, when the plan names one.
+    """Where the product under test is, from the plan's declared candidates.
 
-    A product corpus's binary is not always at the same place: the harness
-    passes it explicitly, a mixed build puts it under ``curr/bin``, and a
-    reference tree under the tree's own ``bin``.  The search order is the one
-    that makes ``-b <tree>`` mean what a caller expects — the build being
-    TESTED — and ``--exe`` overrides it, as the old ``-x`` did.
+    The plan says which product is under test AND the directories it may be
+    in (`target.dirs`); the mechanism resolves by name, taking the one that
+    is there.  `--exe` overrides, for an experiment against some other build.
     """
     if exe is not None:
         return Path(exe)
     if plan.target.kind != 'product':
-        # A tree corpus is judged where the build system put it: the edd flow
-        # passes `<tree>/curr` as the build directory, so `curr` is where the
-        # CTest registrations live.  Taking the build root here found no
-        # registrations at all and reported the suite clean with zero checks
-        # behind it — which is the failure the plan's own floors exist to
-        # catch, caught by them.
-        #
-        # `<tree>/build` is the SECOND layout, and a real one: CMake's default
-        # out-of-source build writes its registrations under `build/`, so a
-        # corpus measured in its own single tree (the pure-Fortran reference
-        # onboarding is verified against) keeps them there.  Without it the
-        # search found no registrations and reported TOTAL 0 — a suite that
-        # judged nothing, which is exactly what onboarding refuses.
-        for candidate in (build_dir / 'curr' / 'build',
-                          build_dir / 'curr',
-                          build_dir / 'build',
-                          build_dir):
-            if (candidate / 'CTestTestfile.cmake').is_file():
-                return candidate
-        return build_dir / 'curr' / 'build'
-    name = plan.target.product
-    for candidate in (build_dir / 'curr' / 'bin' / name,
-                      build_dir / 'bin' / name):
-        if candidate.is_file():
-            return candidate
-    return build_dir / 'curr' / 'bin' / name
+        return reference.resolve_tree(plan, build_dir)
+    return reference.resolve_product(plan, build_dir)
 
 
 def _plan_and_env(build_dir: Path, origin: Path | None,
-                  exe: Path | None = None):
+                  exe: Path | None = None,
+                  protocol: Path | None = None):
     from protocolize.verification_plan import VerificationPlan
     plan = VerificationPlan.load(build_dir / PLAN_NAME)
+    # WHERE the protocol is, and where the run's roots are, are the PLAN's to
+    # declare (with the CLI able to override), never a name baked in here: a
+    # file called `protocol_fortran.json` or a directory called `curr` is a
+    # fact about one project's old harness, and a mechanism that assumes
+    # either is coupled to that project.
+    proto = protocol or (build_dir / plan.protocol if plan.protocol
+                         else build_dir / 'protocol.json')
     cfg = {'target_dir': str(build_dir), 'tree_root': str(build_dir),
-           'protocol': str(build_dir / 'protocol_fortran.json'),
-           '_config_dir': build_dir}
+           'protocol': str(proto), '_config_dir': build_dir}
     env = reference.plan_env(plan, build_dir, cfg,
                          origin_dir=origin or build_dir / 'origin_release',
                          exe_path=_target(plan, build_dir, exe))
@@ -128,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
                         'prerequisites are included automatically')
     p.add_argument('--origin', '-b', type=Path, default=None,
                    help='the golden origin (default: <build>/origin_release)')
+    p.add_argument('--protocol', type=Path, default=None,
+                   help='the build protocol this plan belongs to (default: '
+                        'the plan\'s own `protocol`, or <build>/protocol.json)')
     p.add_argument('--exe', '-x', type=Path, default=None,
                    help='the binary under test (default: <build>/curr/bin/'
                         '<product>, then <build>/bin/<product>)')
@@ -143,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'ERROR: no {PLAN_NAME} under {build_dir}', file=sys.stderr)
         return 1
 
-    plan, env = _plan_and_env(build_dir, args.origin, args.exe)
+    plan, env = _plan_and_env(build_dir, args.origin, args.exe, args.protocol)
     # `-j` is a DELIBERATE override for an experiment.  Without it the width
     # stays whatever the plan declares, because a suite's width is part of its
     # measurement — re-deriving it from the core count here would discard the

@@ -16,6 +16,7 @@ from . import suite
 from . import counts as count
 from . import log
 from .log import Action
+from .suite import PlanRunError
 # The base a config's relative paths resolve against when the config
 # does not name its own directory.  The process's cwd, because this
 # tool is not tied to any one checkout.
@@ -52,6 +53,65 @@ def load_plan(cfg: dict):
     return VerificationPlan.load(path)
 
 
+def _spell_dir(ref: str, build_dir: Path) -> Path:
+    """One candidate root, with its bindings spelled against *build_dir*."""
+    text = str(ref).replace('${TREE}', str(build_dir))
+    text = text.replace('{tree}', str(build_dir)).replace('{target}',
+                                                          str(build_dir))
+    return Path(text)
+
+
+def resolve_product(plan, build_dir: Path) -> Path:
+    """Where the product under test is, from the plan's declared candidates.
+
+    The plan declares CANDIDATES (``target.dirs``) because the same plan runs
+    against two builds that put their artifacts in different places — the
+    project's own build and the generated flat build.  Each is searched for a
+    file of the product's name; exactly one hit is the answer, and MORE than
+    one is refused rather than picked silently (the same rule as everywhere
+    else in this tool).
+
+    With no candidates declared, the conventional places are tried, so a plan
+    captured before this field still resolves.
+    """
+    name = plan.target.product
+    if not name:
+        return build_dir / 'bin'
+    refs = plan.target.dirs or ('{tree}/bin', '{tree}/curr/bin')
+    hits = [p for p in (_spell_dir(r, build_dir) / name for r in refs)
+            if p.is_file()]
+    if len(hits) > 1:
+        raise PlanRunError(
+            f'the product {name!r} is in more than one of the plan\'s '
+            f'candidate directories ({", ".join(str(h) for h in hits)}) — '
+            f'which one is under test is not something to guess')
+    if hits:
+        return hits[0]
+    # Nothing found: name the first candidate so the failure says where it
+    # looked rather than handing back a path from nowhere.
+    return _spell_dir(refs[0], build_dir) / name
+
+
+def resolve_tree(plan, build_dir: Path) -> Path:
+    """Where a tree target's registrations are, from the plan's candidates.
+
+    The registrations live where the build system put them, and the same plan
+    runs on two builds whose configure directories differ — so the plan
+    declares the candidates and the one holding the registry is the answer.
+    """
+    refs = plan.target.dirs or ('{tree}/build', '{tree}')
+    hits = [p for p in (_spell_dir(r, build_dir) for r in refs)
+            if (p / 'CTestTestfile.cmake').is_file()]
+    if len(hits) > 1:
+        raise PlanRunError(
+            f'the build system\'s registrations are in more than one of the '
+            f'plan\'s candidate directories '
+            f'({", ".join(str(h) for h in hits)}) — refusing to guess')
+    if hits:
+        return hits[0]
+    return _spell_dir(refs[0], build_dir)
+
+
 def plan_env(plan, build_dir: Path, cfg: dict,
              origin_dir: Path | None = None,
              exe_path: Path | None = None) -> 'suite.Env':
@@ -67,17 +127,11 @@ def plan_env(plan, build_dir: Path, cfg: dict,
         # The caller's answer wins when it has one: `exe_path` is the
         # harness's long-standing convention for where a product lands, and
         # the plan's job is to say WHICH product, not to second-guess where.
-        target = Path(exe_path) if exe_path else \
-            build_dir / 'bin' / plan.target.product
+        target = Path(exe_path) if exe_path else resolve_product(plan, build_dir)
     else:
-        # A tree corpus: the harness used to hand it `<tree>/bin/<binary>`,
-        # which for a library names a path that does not exist.  What it IS
-        # is the directory the build system put its test registrations in —
-        # a fact about where the build ran, so it is READ rather than
-        # assumed: `curr/build` here, but the tree root for a corpus built in
-        # place.  Assuming the tree root found no registrations at all and
-        # reported the suite clean with zero checks behind it.
-        target = _tree_target(build_dir)
+        # A tree corpus is judged where the build system put its
+        # registrations (see resolve_tree).
+        target = resolve_tree(plan, build_dir)
     return suite.Env(
         target=target, tree=build_dir,
         origin=Path(origin_dir) if origin_dir else Path(cfg['target_dir']),
@@ -90,31 +144,6 @@ def plan_env(plan, build_dir: Path, cfg: dict,
         # core") and is only the fallback for a plan that declares none.
         jobs=plan.run.jobs or max(1, os.cpu_count() or 1),
         protocol_tests=protocol_tests(cfg))
-
-
-def _tree_target(build_dir: Path) -> Path:
-    """The tree a suite corpus is judged in: where its test registrations are.
-
-    Where the build system put them, and the two callers hand this function
-    different roots:
-
-      * the EDD flow passes `<target>/curr` — the build it just made;
-      * a caller with the whole corpus passes `<target>`.
-
-    So the candidates are derived from whatever was handed in, rather than
-    assumed to be one of those two.  Measured: resolving only from the tree
-    root meant the EDD flow looked for `<target>/curr/curr/build`, found no
-    registrations, and reported the suite clean with ZERO checks behind it —
-    the plan's own floor turned that into a failure, which is what the floor
-    is for, but the resolution was still wrong.
-    """
-    for rel in ('build', 'curr/build', 'curr'):
-        candidate = build_dir / rel
-        if (candidate / 'CTestTestfile.cmake').is_file():
-            return candidate
-    # Nothing found: name the conventional place rather than the root, so the
-    # failure says where it looked.
-    return build_dir / 'build'
 
 
 def protocol_tests(cfg: dict) -> list:
