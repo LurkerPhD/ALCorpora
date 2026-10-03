@@ -453,8 +453,18 @@ class Toolchain:
         # Not produced: it is READ, so it keeps naming the capture tree.
         return str(resolved)
 
-    def in_tree_space_cmd(self, command: str) -> str:
+    def in_tree_space_cmd(self, command: str,
+                          directory: 'Path | None' = None) -> str:
         """*command* with the paths this build PRODUCES re-rooted.
+
+        *directory* is where the command RUNS, and a token spelled relative is
+        relative to it.  Omitted, it is the build directory — right for a
+        build system that runs every command there.  A make build does not:
+        each of its directories runs its own commands, so ``../mis/libmis.a``
+        inside ``mds/`` names ``mds/../mis``, and resolving it against the
+        build root instead left the archive spelled ABSOLUTE — the link then
+        read the capture tree and a replay failed on a file it could not
+        create (measured).
 
         TOKEN BY TOKEN, and only the produced ones.  Replacing the root as a
         substring rewrites every path that mentions it, which conflates two
@@ -483,8 +493,9 @@ class Toolchain:
         except ValueError:
             return escape_tree(command, self.root)
         out: list[str] = []
+        where = Path(directory) if directory is not None else self.build
         for tok in argv:
-            out.append(self._spell_token(tok, self.build))
+            out.append(self._spell_token(tok, where))
         # Re-joined WITHOUT quoting the shell's own operators.  `shlex.join`
         # quotes every token it does not consider safe, and `&&` is one of
         # them — so a two-command line came back as

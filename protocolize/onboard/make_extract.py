@@ -36,7 +36,7 @@ from pathlib import Path
 
 from protocolize.private_protocol import TREE, CompileEntry, Product, Protocol
 
-from .extract import ExtractionError, Toolchain
+from .extract import ExtractionError, Toolchain, _absolutise_paths
 
 __all__ = ['OBJECTS_NOT_COMPARABLE', 'extract_make_protocol',
            'make_directories']
@@ -329,8 +329,16 @@ def extract_make_protocol(tree: str | Path, *,
     for directory, (archive_path, member_tokens) in archives:
         stems = _resolve_objects(tc, directory, member_tokens, stem_of_object)
         members_of_archive[str(archive_path)] = tuple(stems)
-        products.append(Product(output=tc.in_tree_space(archive_path),
-                                kind='archive', members=tuple(stems)))
+        # The recorded `ar` line, so the replay builds the archive itself
+        # rather than only naming it (see _parse_link's note).
+        ar_line = _archive_line(directory, archive_path, member_tokens)
+        products.append(Product(
+            output=tc.in_tree_space(archive_path), kind='archive',
+            members=tuple(stems),
+            command=(tc.in_tree_space_cmd(
+                _absolutise_paths(ar_line, str(directory)), directory)
+                if ar_line else ''),
+            directory=tc.dir_spelling(directory)))
 
     for directory, argv in links:
         product = _parse_link(tc, directory, argv, stem_of_object,
@@ -496,6 +504,22 @@ def _resolve_objects(tc: Toolchain, directory: Path, tokens: list[str],
     return out
 
 
+def _archive_line(directory: Path, archive: Path, members: list[str]) -> str:
+    """The recorded ``ar`` command, re-spelled relative to *directory*.
+
+    Reconstructed from the parsed parts because the dry run's line was already
+    split; the members keep the ORDER the build gave them.
+    """
+    def rel(x: Path) -> str:
+        try:
+            return x.relative_to(directory).as_posix()
+        except ValueError:
+            return str(x)
+    return ' '.join(['ar', 'crs', rel(archive), *(rel(Path(m) if
+                     Path(m).is_absolute() else directory / m)
+                     for m in members)])
+
+
 def _parse_link(tc: Toolchain, directory: Path, argv: list[str],
                 stem_of_object: dict[str, str],
                 members_of_archive: dict[str, tuple[str, ...]]
@@ -544,8 +568,15 @@ def _parse_link(tc: Toolchain, directory: Path, argv: list[str],
                 f'produces.  The link line cannot be expressed as stems.')
         objects.append(stem)
     out_abs = (out if out.is_absolute() else directory / out)
+    # The record: the EXACT link command and the directory it ran in, both
+    # re-spelled against the tree — a replay runs them verbatim, and a
+    # directory left absolute would make it write into the CAPTURE tree.
     return Product(output=tc.in_tree_space(out_abs), kind='exe',
-                   objects=tuple(objects), libs=tuple(libs), driver=driver)
+                   objects=tuple(objects), libs=tuple(libs), driver=driver,
+                   command=tc.in_tree_space_cmd(
+                       _absolutise_paths(shlex.join(argv), str(directory)),
+                       directory),
+                   directory=tc.dir_spelling(directory))
 
 
 def _refuse_missing_sources(entries: dict[str, CompileEntry]) -> None:
