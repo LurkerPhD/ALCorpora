@@ -44,7 +44,8 @@ def _target(plan, build_dir: Path, exe: Path | None) -> Path | None:
 
 def _plan_and_env(build_dir: Path, origin: Path | None,
                   exe: Path | None = None,
-                  protocol: Path | None = None):
+                  protocol: Path | None = None,
+                  tree: Path | None = None):
     from protocolize.verification_plan import VerificationPlan
     plan = VerificationPlan.load(build_dir / PLAN_NAME)
     # WHERE the protocol is, and where the run's roots are, are the PLAN's to
@@ -54,11 +55,19 @@ def _plan_and_env(build_dir: Path, origin: Path | None,
     # either is coupled to that project.
     proto = protocol or (build_dir / plan.protocol if plan.protocol
                          else build_dir / 'protocol.json')
-    cfg = {'target_dir': str(build_dir), 'tree_root': str(build_dir),
+    # THE TREE the plan's `${TREE}` denotes — the tree the run happens in.  It
+    # is NOT the place the plan's file sits: a plan is written once and run
+    # against a build somewhere (the reference tree, or a replay), so which
+    # tree that is belongs to the RUN, exactly as the origin and the target
+    # do.  `--tree` names it; the default is the build directory, which is
+    # right for a plan run in the tree it was captured from.
+    tree_dir = Path(tree).resolve() if tree else build_dir
+    cfg = {'target_dir': str(build_dir), 'tree_root': str(tree_dir),
            'protocol': str(proto), '_config_dir': build_dir}
     env = reference.plan_env(plan, build_dir, cfg,
                          origin_dir=origin or build_dir / 'origin_release',
-                         exe_path=_target(plan, build_dir, exe))
+                         exe_path=_target(plan, tree_dir, exe))
+    env.tree = tree_dir
     return plan, env
 
 
@@ -112,6 +121,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--protocol', type=Path, default=None,
                    help='the build protocol this plan belongs to (default: '
                         'the plan\'s own `protocol`, or <build>/protocol.json)')
+    p.add_argument('--tree', type=Path, default=None,
+                   help='the tree the plan runs in — what its ${TREE} means. '
+                        'A plan is written once and run against a build '
+                        'somewhere, so this belongs to the run (default: the '
+                        'build directory)')
     p.add_argument('--exe', '-x', type=Path, default=None,
                    help='the binary under test (default: <build>/curr/bin/'
                         '<product>, then <build>/bin/<product>)')
@@ -127,7 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f'ERROR: no {PLAN_NAME} under {build_dir}', file=sys.stderr)
         return 1
 
-    plan, env = _plan_and_env(build_dir, args.origin, args.exe, args.protocol)
+    plan, env = _plan_and_env(build_dir, args.origin, args.exe, args.protocol,
+                              args.tree)
     # `-j` is a DELIBERATE override for an experiment.  Without it the width
     # stays whatever the plan declares, because a suite's width is part of its
     # measurement — re-deriving it from the core count here would discard the

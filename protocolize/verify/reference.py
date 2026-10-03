@@ -123,11 +123,13 @@ def plan_env(plan, build_dir: Path, cfg: dict,
     corpus that is a library named a path that does not exist.
     """
     build_dir = Path(build_dir)
-    if plan.target.kind == 'product':
-        # The caller's answer wins when it has one: `exe_path` is the
-        # harness's long-standing convention for where a product lands, and
-        # the plan's job is to say WHICH product, not to second-guess where.
-        target = Path(exe_path) if exe_path else resolve_product(plan, build_dir)
+    if exe_path:
+        # The caller's answer wins when it has one: it has already resolved
+        # the target from the plan's candidates (against the RUN's tree, not
+        # the directory the plan file happens to sit in).
+        target = Path(exe_path)
+    elif plan.target.kind == 'product':
+        target = resolve_product(plan, build_dir)
     else:
         # A tree corpus is judged where the build system put its
         # registrations (see resolve_tree).

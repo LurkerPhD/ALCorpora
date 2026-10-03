@@ -1083,8 +1083,15 @@ def _run_suite(plan, env: Env, cases: list[Case]) -> list[CaseResult]:
 
 
 #: The suite runner's own per-test vocabulary, as the build systems print it.
-_SUITE_FAIL_RE = re.compile(r'^\s*\d+\s*-\s*(\S+)\s*\(Failed\)', re.M)
-_SUITE_FAILED_RE = re.compile(r'^\s*Failed\s+(\S+)\s*$', re.M)
+#: A test the runner reported as anything other than passing: `Failed`,
+#: `Not Run` (its command could not even be found), `Timeout`, `Skipped` is
+#: NOT here — a skip is the runner's own declaration.  Reading only
+#: `(Failed)` counted a `(Not Run)` suite as fully passing while ctest found
+#: NO executable — a false green, which is the one outcome a verdict must
+#: never produce.
+_SUITE_FAIL_RE = re.compile(
+    r'^\s*\d+\s*-\s*(\S+)\s*\((?!Skipped|Passed)[^)]+\)', re.M)
+_SUITE_FAILED_RE = re.compile(r'^\s*(?:Failed|Not Run)\s+(\S+)\s*$', re.M)
 
 
 def _parse_suite(plan, out: str, rc: int, elapsed: float,
@@ -1092,6 +1099,10 @@ def _parse_suite(plan, out: str, rc: int, elapsed: float,
     """One result per registered case, judged by the plan's suite assertions."""
     declared = [c.id for c in cases]
     if rc != 0 and rc not in tuple(plan.run.exit_accept):
+        # The runner's OWN exit status is a verdict: a suite that exited
+        # non-zero did not complete as the project declares completion.  It is
+        # CRASHED, whatever the summary says — trusting the summary here is
+        # how a suite whose tests were all "Not Run" read as passing.
         return [CaseResult(cid, 'crashed', elapsed, f'(suite exited {rc})')
                 for cid in declared]
     failed = set(_SUITE_FAIL_RE.findall(out)) | set(_SUITE_FAILED_RE.findall(out))
