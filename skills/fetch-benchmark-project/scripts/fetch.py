@@ -189,7 +189,9 @@ def _language(proto) -> str:
 
 
 def prove_legal(dest: Path, src: Path, build: Path, number: int,
-                src_name: str, remedies: 'list | None' = None) -> int:
+                src_name: str, remedies: 'list | None' = None,
+                facts: Path | None = None,
+                declaration: Path | None = None) -> int:
     """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row."""
     from protocolize.onboard.extract import (ExtractionError,
                                              capture_verification,
@@ -220,7 +222,13 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
     if remedies:
         proto.prepare = list(remedies) + list(proto.prepare or ())
     proto.save(dest / 'protocol.json')
-    data = capture_verification(proto, build, src, project_root=src)
+    # `facts` and `declaration` are the project's OWN declaration, passed
+    # through rather than searched for — see `capture_verification`.  Without
+    # them a corpus that needs preparation stages none, its program exits 0
+    # having written nothing, and every case reports "no output" against a
+    # project that in fact works.
+    data = capture_verification(proto, build, src, project_root=src,
+                                declaration=declaration, facts=facts)
     data['protocol'] = 'protocol.json'
     plan = VerificationPlan.from_json(data)
     lang = _language(proto)
@@ -236,10 +244,19 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
 
     origin = dest / 'origin_release'
     if plan.golden.source == 'reference_run':
+        from protocolize.verify import cli as cli_mod
         from protocolize.verify import reference, suite
         cfg = {'target_dir': str(dest), 'tree_root': str(src),
                'protocol': str(dest / 'protocol.json'), '_config_dir': dest}
-        env = reference.plan_env(plan, dest, cfg, origin_dir=origin)
+        # The reference run is a RUN like any other — of the project's own
+        # build — so its roots are resolved the same way `cli` resolves them
+        # for a plan run.  Left to `plan_env`'s default the target would be
+        # resolved against the benchmark folder rather than the tree the
+        # build actually lives in, and a corpus whose products are beside
+        # its sources would capture its goldens from a binary that is not
+        # there.
+        env = reference.plan_env(plan, dest, cfg, origin_dir=origin,
+                                 exe_path=cli_mod._target(plan, src, None))
         env.tree = src.resolve()
         goldens = suite.ensure_reference(plan, env)
         if goldens == 0:
@@ -302,6 +319,21 @@ def _inner_source(dest: Path) -> Path:
     raise FetchError(f'{dest} holds no source checkout')
 
 
+def _declared(value: str | None, src: Path) -> Path | None:
+    """A declaration path from the command line, resolved against the tree.
+
+    The caller names it once, before the checkout is laid down, so a relative
+    path cannot be resolved yet.  It is resolved HERE, against the project's
+    own source, because that is where a project keeps the fact it declares
+    about itself — and the fact must travel with the project, not with the
+    benchmark folder the run happens to be driven from.
+    """
+    if not value:
+        return None
+    p = Path(value)
+    return p if p.is_absolute() else (src / p)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('source', help='github url, or a local path to copy')
@@ -322,6 +354,17 @@ def main(argv=None) -> int:
     p.add_argument('--readmit', action='store_true',
                    help='re-prove a project already in benchmark/ (its SOURCE '
                         'is the argument), after a renumber or a tool change')
+    p.add_argument('--facts', default=None,
+                   help='JSON file of facts the project declares that its '
+                        'tree cannot show (a restart chain, the preparation '
+                        'its programs need to run). Read by the capture — see '
+                        'the "facts declaration" section of the skill. A '
+                        'relative path is resolved against the project source.')
+    p.add_argument('--declaration', default=None,
+                   help='the file where the project states its comparison '
+                        'rules (volatile lines, numeric slack). Passed IN, '
+                        'never searched for. A relative path is resolved '
+                        'against the project source.')
     args = p.parse_args(argv)
     args.prepare_ops = []
     if args.prepare:
@@ -355,7 +398,9 @@ def main(argv=None) -> int:
             return 1
         print('  native build + verify: OK')
         return prove_legal(dest, src, src / args.tree_subdir, number,
-                           dest.name.split('-', 1)[-1], remedies)
+                           dest.name.split('-', 1)[-1], remedies,
+                           facts=_declared(args.facts, src),
+                           declaration=_declared(args.declaration, src))
 
     src_name = args.name or Path(args.source.rstrip('/')).stem
     src_name = src_name[:-4] if src_name.endswith('.git') else src_name
@@ -382,7 +427,8 @@ def main(argv=None) -> int:
         return 1
     print('  native build + verify: OK')
     return prove_legal(dest, src, src / args.tree_subdir, n, src_name,
-                       remedies)
+                       remedies, facts=_declared(args.facts, src),
+                       declaration=_declared(args.declaration, src))
 
 
 if __name__ == '__main__':
