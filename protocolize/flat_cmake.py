@@ -40,20 +40,25 @@ _HEADER = """\
 
 @dataclass
 class Selection:
-    """The units this build compiles, by stem."""
+    """The units this build compiles.
 
-    entries: dict[str, CompileEntry] = field(default_factory=dict)
+    A LIST, not a stem-keyed map: one stem may be two units — a Fortran
+    module and the C it binds — so the stem is the unit's IDENTITY but not a
+    unique key.
+    """
+
+    entries: list[CompileEntry] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
 
 
 def select(protocol: Protocol) -> Selection:
-    """Each unit, by its stem.
+    """The protocol's units, as a list.
 
-    The protocol keys a unit by its stem, and :meth:`Protocol.problems`
-    refuses two entries that share one — so a stem resolves to exactly one
-    source, which is what a product's member list relies on.
+    A unit is identified by its stem, but a stem may be TWO units — a Fortran
+    module and the C it binds — so this is a list, and a product's members
+    (stems) resolve to every unit of that stem.
     """
-    return Selection(entries={e.stem: e for e in protocol.compilation})
+    return Selection(entries=list(protocol.compilation))
 
 
 def object_name_for(stem: str, language: str) -> str:
@@ -180,20 +185,22 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
     # The ORDER among units is still ours: a custom command has no dependency
     # of its own, so a unit DEPENDS on the object of every module it uses.
     provider: dict[str, str] = {}
-    for stem, e in selection.entries.items():
+    for e in selection.entries:
         for mod in e.provides:
-            provider.setdefault(mod.casefold(), stem)
-    for stem in sorted(selection.entries):
-        e = selection.entries[stem]
+            provider.setdefault(mod.casefold(), e.stem)
+    by_stem: dict[str, list[CompileEntry]] = {}
+    for e in selection.entries:
+        by_stem.setdefault(e.stem, []).append(e)
+    for e in sorted(selection.entries, key=lambda x: (x.stem, x.language)):
+        stem = e.stem
         cwd = _expand(e.directory, tree)
         out = _unit_output(e, tree)
         deps = [_expand(e.file, tree)]
         for mod in e.uses:
             owner = provider.get(mod.casefold())
-            if owner is not None and owner != stem \
-                    and owner in selection.entries:
-                deps.append(_unit_output(selection.entries[owner], tree))
-        lines.append(f'# {stem}')
+            if owner is not None and owner != stem and owner in by_stem:
+                deps += [_unit_output(o, tree) for o in by_stem[owner]]
+        lines.append(f'# {stem} ({e.language or "?"})')
         # A unit the build compiles in TWO steps (a scanned source: preprocess
         # then compile) is replayed in two: the preprocess command makes the
         # intermediate, and the compile command consumes it.  Replaying only
@@ -235,8 +242,7 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         cwd = _expand(prod.directory, tree) if prod.directory else tree
         deps: list[str] = []
         for stem in (*prod.members, *prod.objects):
-            if stem in selection.entries:
-                deps.append(_unit_output(selection.entries[stem], tree))
+            deps += [_unit_output(o, tree) for o in by_stem.get(stem, ())]
         for lib in prod.libs:
             ref = _expand(lib, tree)
             if ref in by_output:
@@ -387,107 +393,6 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
     return '\n'.join(lines) + '\n'
 
 
-def _first_product(protocol: Protocol) -> int:
-    """The index of the first linkable product, or -1.
-
-    The target that additionally compiles the unlinked units NOTHING uses.
-    One is enough — they have no consumers to be ordered against — and one
-    is required, because a unit no target builds is a unit that does not
-    exist as far as the build is concerned.
-    """
-    for i, prod in enumerate(protocol.products):
-        if prod.kind in ('archive', 'exe'):
-            return i
-    return -1
-
-
-def _unlinked_units(protocol: Protocol,
-                    selection: Selection) -> dict[str, frozenset[str]]:
-    """``{stem: modules it provides}`` for every unit no product links.
-
-    A unit can exist without linking into anything — LAPACK's `la_constants`
-    provides a module and nothing else, and its object has no global symbols
-    at all.  `products` says what LINKS; it does not say what exists, so a
-    unit missing from every product is not thereby absent from the build.
-
-    Measured: emitting only a product's members dropped `la_constants`, and
-    the replay died in a CONSUMER — `Fatal Error: Cannot open module file
-    'la_constants.mod'` — naming a `.mod` three steps from the cause.
-    """
-    linked: set[str] = set()
-    for prod in protocol.products:
-        linked.update(prod.members)
-        linked.update(prod.objects)
-    out: dict[str, frozenset[str]] = {}
-    for stem, entry in selection.entries.items():
-        if stem in linked:
-            continue
-        modules = frozenset(m.casefold() for e in protocol.compilation
-                            if e.stem == stem for m in e.provides)
-        out[stem] = modules
-    return out
-
-
-def _orphans_needed_by(orphans: dict[str, frozenset[str]],
-                       members: Iterable[str],
-                       selection: Selection, ever_used: set[str],
-                       *, first: bool = False) -> list[str]:
-    """The unlinked units whose MODULE this target's own units use.
-
-    Into the TARGET, not merely into the build: CMake derives Fortran
-    compile order WITHIN a target, so a `.mod` produced in another target
-    has no ordering edge to the compile that reads it — the same failure by
-    a different route.
-
-    *first* is for the first product, which additionally takes the unlinked
-    units nothing uses at all: they still have to be compiled somewhere, and
-    the alternative is a unit no target builds.
-    """
-    if not orphans:
-        return []
-    used: set[str] = set()
-    for stem in members:
-        entry = selection.entries.get(stem)
-        if entry is not None:
-            used.update(m.casefold() for m in entry.uses)
-    out = [stem for stem, modules in sorted(orphans.items())
-           if modules & used]
-    if first:
-        # ... and the ones with NO consumer anywhere.  A unit nothing uses
-        # still exists; leaving it out of every target is a unit the build
-        # never compiles, which is the whole defect by another route.  One
-        # target is enough, because with no consumer there is no order to
-        # keep.
-        taken = set(out)
-        out += [stem for stem in sorted(orphans)
-                if stem not in taken and not (orphans[stem] & ever_used)]
-    return out
-
-
-def _lib_ref(lib: str, protocol: Protocol, selection: Selection,
-            tree: str) -> str:
-    """How a link line should name *lib*.
-
-    A library THIS build produces is named by its target, because the target
-    is what knows where the archive ends up.  A library it does not produce
-    — a system library, or one the project ships — keeps its path, because
-    there is nothing here that would make it.
-    """
-    want = _resolve(expand_tree(lib, tree), tree)
-    for i, prod in enumerate(protocol.products):
-        if prod.kind != 'archive':
-            continue
-        # Compared RESOLVED, not as text: a link line may spell the archive
-        # relatively (a Makefile does) while the product records it against
-        # `${TREE}`, and a string compare then misses a library this build
-        # really does produce.
-        if _resolve(expand_tree(prod.output, tree), tree) != want:
-            continue
-        if prod.members and all(m in selection.entries for m in prod.members):
-            return f'_prod_{i}'
-    return _cmake_string(lib)
-
-
 def _resolve(path: str, tree: str) -> str:
     """*path* as an absolute path, relative spellings taken against *tree*."""
     p = Path(path)
@@ -504,12 +409,12 @@ def _build_preprocesses(selection: Selection) -> bool:
     and a converted unit has no Fortran scan in front of it), and one that did
     not must not acquire one.
     """
-    return any(e.preprocess for e in selection.entries.values())
+    return any(e.preprocess for e in selection.entries)
 
 
 def _has_fortran(selection: Selection) -> bool:
     return any((e.language or 'fortran') == 'fortran'
-               for e in selection.entries.values())
+               for e in selection.entries)
 
 
 def _ident(stem: str) -> str:

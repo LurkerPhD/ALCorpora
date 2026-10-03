@@ -523,18 +523,23 @@ class Protocol:
         """
         bad: list[str] = []
 
-        seen: dict[str, int] = {}
+        seen: dict[tuple, int] = {}
         for i, e in enumerate(self.compilation):
             for name in ('directory', 'command', 'file', 'output'):
                 why = check_tree_invariant(getattr(e, name))
                 if why:
                     bad.append(f'compilation[{i}].{name}: {why}')
-            if e.stem in seen:
+            # ONE UNIT PER (stem, language).  Two languages may share a stem —
+            # a Fortran module and the C it binds are distinct units — but two
+            # entries of the SAME language for one stem compile twice and
+            # archive under one name.
+            key = (e.stem, e.language or '')
+            if key in seen:
                 bad.append(
-                    f'compilation[{i}]: stem {e.stem!r} appears twice — the '
-                    f'stem is the unit\'s identity, so two entries for one '
+                    f'compilation[{i}]: stem {e.stem!r} appears twice as '
+                    f'{key[1] or "?"} — two units of one language sharing a '
                     f'stem compile twice and archive under one name')
-            seen[e.stem] = i
+            seen[key] = i
 
         for i, g in enumerate(self.generated_inputs):
             for name in ('output', 'command'):

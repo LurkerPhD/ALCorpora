@@ -665,7 +665,21 @@ def _stem_collisions(tc: Toolchain) -> dict[str, list[str]]:
         if src is None or src.suffix not in SOURCE_EXTS:
             continue
         by_stem.setdefault(tc.stem_of(src), []).append(str(src))
-    return {k: sorted(set(v)) for k, v in by_stem.items() if len(set(v)) > 1}
+    # A collision is two sources of ONE LANGUAGE claiming a stem.  Two
+    # LANGUAGES sharing a stem is LEGAL and occurs: a Fortran module and the C
+    # function it binds (`stdlib_system.F90` + `stdlib_system.c`), linked by
+    # `bind(c)`.  They are distinct translation units whose objects CMake
+    # names after their sources (`.f90.o` vs `.c.o`), so they neither collide
+    # nor overwrite each other.
+    out: dict[str, list[str]] = {}
+    for stem, sources in by_stem.items():
+        by_lang: dict[str, list[str]] = {}
+        for s in sorted(set(sources)):
+            lang = 'fortran' if Path(s).suffix in FORTRAN_EXTS else 'cpp'
+            by_lang.setdefault(lang, []).append(s)
+        if any(len(v) > 1 for v in by_lang.values()):
+            out[stem] = sorted(set(sources))
+    return out
 
 
 def _units(tc: Toolchain) -> tuple[list[CompileEntry], dict[str, str]]:
@@ -692,7 +706,7 @@ def _units(tc: Toolchain) -> tuple[list[CompileEntry], dict[str, str]]:
               f'back to the basename. Pass the tree above it.')
     out: list[CompileEntry] = []
     by_object: dict[str, str] = {}
-    seen: dict[str, str] = {}
+    seen: set[tuple[str, str]] = set()
     for key, e in sorted(_edges(tc, _raw_entries(tc)).items()):
         src = e.real
         if src is None or src.suffix not in SOURCE_EXTS:
@@ -700,18 +714,12 @@ def _units(tc: Toolchain) -> tuple[list[CompileEntry], dict[str, str]]:
         stem = tc.stem_of(src)
         language = 'fortran' if src.suffix in FORTRAN_EXTS else 'cpp'
         by_object[key] = stem
-        if seen.get(stem) == language:
-            # The same stem twice is ONE translation unit compiled into
-            # several products: LAPACK builds 72 of TESTING's helpers into up
-            # to eight executables each.  The protocol keys on the stem, so
-            # one entry describes it.
+        if (stem, language) in seen:
+            # The same (stem, language) twice is ONE translation unit compiled
+            # into several products: LAPACK builds 72 of TESTING's helpers
+            # into up to eight executables each.  One entry describes it.
             continue
-        if stem in seen and seen[stem] != language:
-            raise ExtractionError(
-                f'stem {stem!r} is compiled as two languages in one build '
-                f'({seen[stem]} and {language}); which one this tree built '
-                f'cannot be decided from the database alone')
-        seen[stem] = language
+        seen.add((stem, language))
         provides, uses = _module_edges(src)
         # Paths first, then the tree placeholder: absolutising uses the
         # capture directory, which the placeholder would have erased.
