@@ -14,4 +14,4 @@ requires-python = ">=3.10"
 packages = ["protocolize", "protocolize.onboard", "protocolize.edd"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "skills/onboard-corpus/tests"]
+testpaths = ["tests", "skills/onboard-project/tests"]

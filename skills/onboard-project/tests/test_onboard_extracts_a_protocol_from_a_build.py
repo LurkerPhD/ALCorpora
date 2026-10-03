@@ -81,7 +81,7 @@ def _configure(root: Path) -> Path:
 
 @pytest.fixture(scope='module')
 def built(tmp_path_factory):
-    root = tmp_path_factory.mktemp('onboard_corpus')
+    root = tmp_path_factory.mktemp('onboard_project')
     _make_corpus(root)
     return root, _configure(root)
 

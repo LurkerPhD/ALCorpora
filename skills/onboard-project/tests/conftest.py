@@ -1,4 +1,4 @@
-"""Path setup for the onboard-corpus skill's tests.
+"""Path setup for the onboard-project skill's tests.
 
 These tests exercise the skill's own implementation — ``protocolize/onboard/``,
 the mechanical half the skill's ``scripts/onboard.py`` wraps — and not the
@@ -13,7 +13,7 @@ discovers and runs them exactly as it runs ``tests/unit/`` (see
 The repository root goes on ``sys.path`` so ``protocolize.*`` and ``src.*``
 import the same way they do from ``tests/unit/conftest.py``.  The index is 4
 because this file sits four levels below the root
-(``.github/skills/onboard-corpus/tests/``).
+(``skills/onboard-project/tests/``).
 """
 
 import sys

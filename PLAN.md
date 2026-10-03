@@ -37,7 +37,7 @@ protocolize/
   verify/compare.py        text/field comparison
   verify/counts.py         BenchCounts (parsed from a runner's own output)
   verify/log.py
-skills/onboard-corpus/  the skill: SKILL.md, scripts/onboard.py, reference/*.json, tests/
+skills/onboard-project/  the skill: SKILL.md, scripts/onboard.py, reference/*.json, tests/
 ```
 
 **Verified**: every module imports with only this repo on `sys.path`; no Python import
@@ -190,4 +190,4 @@ A legal project is **self-contained**: everything the build/verification needs i
 * `protocolize/private_protocol.py`, `protocolize/verification_plan.py` — schema
 * `protocolize/flat_cmake.py` — runtime_include → extra_includes
 * `protocolize/verify/{suite,cli,reference}.py` — run + verdict
-* `skills/onboard-corpus/` — the skill (research + research-and-run; fills the templates)
+* `skills/onboard-project/` — the skill (research + research-and-run; fills the templates)

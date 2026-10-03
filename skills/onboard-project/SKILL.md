@@ -1,6 +1,6 @@
 ---
-name: onboard-corpus
-description: 'Read a private protocol out of a project that already builds, and PROVE it by rebuilding. The protocol is what lets a flow build any state of that project without knowing anything about it. Trigger words: onboard corpus, 接入语料, onboard-corpus, 私有协议.'
+name: onboard-project
+description: 'Read a private protocol out of a project that already builds, and PROVE it by rebuilding. The protocol is what lets a flow build any state of that project without knowing anything about it. Trigger words: onboard project, 接入项目, onboard-project, 私有协议.'
 argument-hint: '<build tree> [--out PATH]'
 user-invocable: true
 ---

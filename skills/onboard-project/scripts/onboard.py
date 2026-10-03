@@ -2,7 +2,7 @@
 """Onboard a Fortran corpus: read a protocol AND an acceptance plan out of
 its own build, and prove both.
 
-The mechanical half of the `onboard-corpus` skill, and the ONLY place a
+The mechanical half of the `onboard-project` skill, and the ONLY place a
 corpus's build system is ever inspected.  It runs once per corpus; after it,
 the flow owns the corpus's build entirely and nothing here is looked at
 again.
@@ -236,7 +236,7 @@ def main(argv=None) -> int:
             cfg = json.loads(cfg_path.read_text(encoding='utf-8'))
         cfg.setdefault('comment',
                        'Extracted from the corpus\'s own build by the '
-                       'onboard-corpus skill.  Regenerate with that skill; '
+                       'onboard-project skill.  Regenerate with that skill; '
                        'do not hand-edit.')
         cfg['protocol'] = str(out.relative_to(REPO)) if out.is_relative_to(
             REPO) else str(out)
