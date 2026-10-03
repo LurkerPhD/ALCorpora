@@ -24,6 +24,7 @@ drift — which is what the protocol's own record of the command is for.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,6 +92,24 @@ def flat_cmake(protocol: Protocol, *, tree: str | Path,
     out = Path(tree) / name
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding='utf-8')
+    # The response files, written where the commands that read them expect.
+    # Every input on its own line, which is the format a generator uses and
+    # the reason it exists: a command line too long to spell out.
+    by_stem: dict[str, list] = {}
+    for e in protocol.compilation:
+        by_stem.setdefault(e.stem, []).append(e)
+    for prod in protocol.products:
+        cwd = _expand(prod.directory, tree) if prod.directory else tree
+        for rsp in prod.rspfiles:
+            rsp_path = Path(_expand(rsp, tree))
+            if not str(rsp_path).startswith(os.sep):
+                # Relative to the DIRECTORY THE COMMAND RUNS IN, exactly as
+                # the `@<path>` operand in it is.
+                rsp_path = Path(cwd) / rsp_path
+            rsp_path.parent.mkdir(parents=True, exist_ok=True)
+            entries = [_unit_output(o, tree)
+                       for stem in prod.stems for o in by_stem.get(stem, ())]
+            rsp_path.write_text('\n'.join(entries) + '\n', encoding='utf-8')
     return str(out)
 
 
@@ -252,6 +271,18 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
                      f'"{_cmake_string(str(Path(out).parent))}"')
         if prod.command:
+            # A response file the command reads is THIS build's to make: the
+            # generator that owned it declared it nowhere, so a replay that
+            # does not write it archives against a path that exists in neither
+            # tree.  Its CONTENT is the product's inputs, one per line — which
+            # is what a generator puts there, and what the protocol already
+            # carries as `stems`.  Nothing is re-derived from the command.
+            for rsp in prod.rspfiles:
+                rsp_path = _expand(rsp, tree)
+                if not str(rsp_path).startswith(os.sep):
+                    rsp_path = str(Path(cwd) / rsp_path)
+                lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
+                             f'"{_cmake_string(str(Path(rsp_path).parent))}"')
             lines.append(_command_line(_expand(prod.command, tree)))
         for dep in dict.fromkeys(deps):
             lines.append(f'  DEPENDS "{_cmake_string(dep)}"')

@@ -381,6 +381,42 @@ class Toolchain:
         whatever directory it happened to run in.
         """
         # Separate the flag from its operand so `-I/tree/x` keeps its `-I`.
+        #
+        # `@` is the same kind of case, and it cost a whole corpus: `ar qc
+        # lib.a @CMakeFiles/lapack.rsp` names a RESPONSE FILE, and treating
+        # `@CMakeFiles/lapack.rsp` as one path spelled it `<build>/@CMakeFiles/
+        # lapack.rsp` — the prefix glued on — which does not exist anywhere.
+        # The replay then archived against a file nothing had made.  The `@`
+        # belongs to the program's argument syntax, not to the path, so it is
+        # held back and the PATH is re-spelled on its own.
+        # A RESPONSE FILE, `@<path>`, is BY DEFINITION this build's scratch:
+        # every tool that has the syntax (ar, ld, the compilers) takes a file
+        # the build generator wrote just before the edge ran and removed
+        # after, and no build declares one as an output.  So it is re-rooted
+        # by where it SITS rather than by the `produced` set, which cannot see
+        # it.
+        #
+        # Measured on a corpus whose archive edge alone used one: the path was
+        # classified as "shipped under the build tree", spelled ABSOLUTE, and
+        # pointed the replay at a file that existed in neither tree.  6,794
+        # units compiled and the one library failed to archive.
+        if tok.startswith('@') and len(tok) > 1:
+            inner = tok[1:]
+            if inner.startswith('${'):
+                return tok
+            resolved = Path(inner)
+            if not resolved.is_absolute():
+                resolved = (Path(directory) / inner) if directory \
+                    else Path(inner)
+            resolved = resolved.resolve()
+            rel = None
+            try:
+                rel = resolved.relative_to(Path(self.root).resolve())
+            except ValueError:
+                return '@' + str(resolved)          # outside: not ours
+            text = rel.as_posix()
+            return '@' + (TREE if text == '.' else f'{TREE}/{text}')
+
         for prefix in ('-I', '-isystem', '-J', '-fmoddir', '-module'):
             if tok.startswith(prefix) and len(tok) > len(prefix):
                 return prefix + self._spell_token(tok[len(prefix):], directory)
@@ -944,6 +980,18 @@ def _products(tc: Toolchain, by_object: dict[str, str]) -> list[Product]:
             command=tc.in_tree_space_cmd(
                 _absolutise_paths(command, str(tc.build))) if command else '',
             directory=tc.dir_spelling(tc.build),
+            # The response files THIS command reads, by the path it spells.
+            # Read off the recorded command rather than the build's bindings,
+            # because the question is which of them this edge actually uses —
+            # and a path only this product names is exactly the one a replay
+            # would otherwise look for in the capture tree.
+            # Spelled as the command spells it — relative to `directory`, the
+            # same convention `output` uses — so a replay materialises it
+            # where the command will look.
+            rspfiles=tuple(
+                shlex.split(cmd_tok)[0][1:]
+                for cmd_tok in (command.split() if command else ())
+                if cmd_tok.startswith('@') and len(cmd_tok) > 1),
         ))
     return out
 

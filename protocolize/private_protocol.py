@@ -254,6 +254,19 @@ class Product:
     #: operands are relative to IT (a Makefile links in the directory it runs
     #: in).  Empty means the tree root.
     directory: str = ''
+    #: RESPONSE FILES this command reads, by the path the command spells —
+    #: `@<path>` operands a build generator writes just before the edge runs
+    #: and deletes after.  Only the FILE is recorded; its content is the
+    #: inputs the protocol already knows (`stems`), one per line, which is
+    #: what a generator puts there for an archive edge.
+    #:
+    #: Recorded because a replay cannot re-derive it: nothing declares the
+    #: file as an output, so it looks exactly like a file the project ships,
+    #: and a replay that treats it as one reads the capture tree.  Measured on
+    #: a corpus whose archive edge alone used one: the replay built 6,794
+    #: units and died archiving the one library, against a path that existed
+    #: in neither tree.
+    rspfiles: tuple[str, ...] = ()
 
     def to_json(self) -> dict:
         out: dict = {'output': self.output, 'kind': self.kind}
@@ -269,6 +282,8 @@ class Product:
             out['command'] = self.command
         if self.directory:
             out['directory'] = self.directory
+        if self.rspfiles:
+            out['rspfiles'] = list(self.rspfiles)
         return out
 
     @classmethod
@@ -291,7 +306,8 @@ class Product:
                    driver=d.get('driver') or '',
                    flags=tuple(d.get('flags') or ()),
                    command=d.get('command') or '',
-                   directory=d.get('directory') or '')
+                   directory=d.get('directory') or '',
+                   rspfiles=tuple(d.get('rspfiles') or ()))
 
 
 #: The keys the `build` section may carry.  All are OPTIONAL: a project
