@@ -178,6 +178,16 @@ def native(src: Path, args) -> tuple[bool, str, list]:
     return True, log, remedies
 
 
+def _language(proto) -> str:
+    """The project's dominant source language, from the protocol itself."""
+    counts: dict[str, int] = {}
+    for e in proto.compilation:
+        counts[e.language or '?'] = counts.get(e.language or '?', 0) + 1
+    if not counts:
+        return '?'
+    return max(counts, key=counts.get)
+
+
 def prove_legal(dest: Path, src: Path, build: Path, number: int,
                 src_name: str, remedies: 'list | None' = None) -> int:
     """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row."""
@@ -326,8 +336,14 @@ def main(argv=None) -> int:
             return 1
         print(f're-proving #{number:03d} {dest.name}')
         # A renumber (or a tool change) invalidates the previous build: its
-        # recorded paths name the OLD directory, so build afresh.
-        shutil.rmtree(src / args.tree_subdir, ignore_errors=True)
+        # recorded paths name the OLD directory, so build afresh.  ONLY a
+        # generated CMake build directory is removed — an IN-SOURCE build's
+        # tree holds the project's own sources (`source/mis`, `source/mds`),
+        # and deleting it would delete the project.
+        bd = src / args.tree_subdir
+        if (bd / 'CMakeCache.txt').is_file() or (bd / 'build.ninja').is_file() \
+                or (bd / 'CMakeFiles').is_dir():
+            shutil.rmtree(bd, ignore_errors=True)
         ok, log, remedies = native(src, args)
         if not ok:
             print('REFUSED: the project does not build and verify natively.\n'

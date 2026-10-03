@@ -312,10 +312,15 @@ def extract_make_protocol(tree: str | Path, *,
                 raise ExtractionError(
                     f'{directory} links a source that does not exist: {src}')
             stem = tc.stem_of(src)
+            # The OBJECT is named after the SOURCE's basename (`nastran.o`),
+            # which is what the compiler writes in the make directory — NOT
+            # the tree-relative stem (`mds/nastran.o`), which would apply the
+            # subdirectory a SECOND time once the command runs there.
+            obj = src.stem + '.o'
             entries.setdefault(stem, CompileEntry(
-                directory=str(directory),
-                command=_synthetic_compile(argv, src, stem + '.o'),
-                file=tc.in_tree_space(src), output=stem + '.o', stem=stem,
+                directory=tc.dir_spelling(directory),
+                command=_synthetic_compile(argv, src, obj),
+                file=tc.in_tree_space(src), output=obj, stem=stem,
                 language='cpp' if src.suffix in ('.c', '.cpp', '.cc', '.cxx')
                 else 'fortran'))
 
@@ -378,7 +383,7 @@ def _parse_compile(tc: Toolchain, line: str, argv: list[str],
     obj_path = Path(obj)
     obj_out = (obj_path if obj_path.is_absolute() else directory / obj_path)
     return CompileEntry(
-        directory=str(directory),
+        directory=tc.dir_spelling(directory),
         command=line,
         file=tc.in_tree_space(src_path),
         output=tc.in_tree_space(obj_out),
