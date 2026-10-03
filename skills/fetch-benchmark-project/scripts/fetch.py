@@ -397,23 +397,41 @@ def main(argv=None) -> int:
             return 1
         print(f're-proving #{number:03d} {dest.name}')
         # A renumber (or a tool change) invalidates the previous build: its
-        # recorded paths name the OLD directory, so build afresh.
+        # recorded paths name the OLD directory, so configure afresh.
         #
-        # ONLY a generated build directory OUTSIDE the project is removed.  An
-        # IN-SOURCE build's tree IS the source tree — `--tree-subdir .` names
-        # the checkout — and removing it deletes the project.  The guard used
-        # to be "does it contain a CMakeCache.txt", which an in-source build
-        # has too, so the deletion fired on exactly the case the comment above
-        # claims to protect.
+        # An IN-SOURCE build cannot be cleared by removing its directory — that
+        # directory IS the checkout — so the build system's own GENERATED files
+        # are removed instead and the sources are left alone.  Both halves
+        # matter:
+        #   * Removing the whole tree deletes the project (it is the source).
+        #   * Removing NOTHING is not neutral either: a stale cache re-runs the
+        #     project's configure against its own old answers, and a CMake
+        #     `set(... CACHE ... FORCE)` in the project can then OVERRIDE the
+        #     flags this run passes.  Measured: a corpus mapped a deprecated
+        #     option to a new one by force, so `-DNEW=EMBEDDED` kept resolving
+        #     to the OLD value, the build linked a system library that is not
+        #     installed, and it failed as "does not build" — a diagnosis about
+        #     the project for a fact about a leftover file.
         bd = src / args.tree_subdir
         generated = ((bd / 'CMakeCache.txt').is_file()
                      or (bd / 'build.ninja').is_file()
                      or (bd / 'CMakeFiles').is_dir())
-        if generated and bd != src:
+        if not generated:
+            pass
+        elif bd != src:
             shutil.rmtree(bd, ignore_errors=True)
-        elif generated:
-            print(f'  in-source build tree — keeping {bd} (removing it would '
-                  f'delete the project)', file=sys.stderr)
+        else:
+            # The build system's own state, and nothing else.  A hand-written
+            # `Makefile` is deliberately absent from this list: only files
+            # CMake is known to generate are touched, so a project's own file
+            # can never be the thing this deletes.
+            for name in ('CMakeCache.txt', 'CMakeFiles', 'build.ninja',
+                         '.ninja_deps', '.ninja_log', 'cmake_install.cmake'):
+                target = bd / name
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                elif target.exists():
+                    target.unlink()
         ok, log, remedies = native(src, args)
         if not ok:
             # NOT recorded.  A re-prove's failure is "could not re-prove", not

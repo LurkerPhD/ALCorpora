@@ -101,6 +101,8 @@ def test_a_readmit_never_deletes_the_project_it_is_re_proving(tmp_path: Path):
     (src / 'sub' / 'a.c').write_text('int main(void){return 0;}\n')
     (src / 'CMakeCache.txt').write_text('an in-source build\n')
     (src / 'CMakeFiles').mkdir()
+    (src / 'Makefile').write_text('# the PROJECT\'S OWN Makefile\n')
+    (src / 'src_main.c').write_text('int main(void){return 0;}\n')
 
     fetch.BENCH_CSV = tmp_path / 'benchmark.csv'
     fetch.BENCH_CSV.write_text(_ROW)
@@ -113,6 +115,15 @@ def test_a_readmit_never_deletes_the_project_it_is_re_proving(tmp_path: Path):
     assert (src / 'sub' / 'a.c').is_file(), (
         'the re-prove deleted the project: `--tree-subdir .` was treated as a '
         'generated build directory')
+    # The build system's OWN state must go, or the next configure runs against
+    # the old answers.
+    assert not (src / 'CMakeCache.txt').exists(), (
+        'a stale cache survived, so the next configure re-runs the project '
+        'against its own previous answers')
+    assert not (src / 'CMakeFiles').exists()
+    # ...and the project's own files must NOT.
+    assert (src / 'Makefile').is_file(), 'a project file was deleted'
+    assert (src / 'src_main.c').is_file(), 'a source file was deleted'
 
 
 def test_an_out_of_source_build_directory_is_still_cleared(tmp_path: Path):
