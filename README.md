@@ -224,7 +224,8 @@ capture_verification(proto, build, root, project_root, declaration, facts)
    v
 VerificationPlan.from_json -> problems() must be []
    (refuses: no require_min; a process run with no inputs; golden none with no
-    stamp; a bare $; golden.root a literal path; a self-inconsistent chain)
+    stamp; a bare $; golden.root a literal path; golden.root outside a run
+    output root under source=reference_run; a self-inconsistent chain)
    |
    v
 run cli.main([tree]) on the reference -> exit code IS the verdict -> 0 proves it
@@ -235,9 +236,19 @@ through this same plan and keep whatever the plan calls golden. Reference and
 candidate traverse one code path, so "a failed reference run captures
 nothing" holds by construction.
 
+**The golden is made, never borrowed.** A repository supplies *inputs*; the
+golden comes from running the native build. `golden.root` is therefore
+restricted to a run output root (`{origin}`, `{results}`) when
+`golden.source: reference_run` — a root under the capture tree names a file
+the project SHIPPED, which is agreement with another machine's compiler,
+operating system and decade, not evidence this build ran correctly. Measured:
+an old corpus ships a per-case `.out` for each of its 132 cases and not one is
+byte-identical to what the same decks produce here.
+
 A `golden.source: reference_run` proves the candidate **agrees with the
 reference** — stability, not correctness. A project that ships its own
-reference output has an external truth: say so in `provenance`.
+reference output has an external truth, but that output is an input, so the
+comparison belongs in the project's `declaration`.
 
 ---
 

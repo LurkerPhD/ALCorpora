@@ -201,7 +201,8 @@ capture_verification(proto, build, root, project_root, declaration, facts)
    v
 VerificationPlan.from_json -> problems() 必须 == []
    (拒绝:无 require_min;process 运行没 inputs;golden 是 none 却没 stamp;
-    裸 $;golden.root 是字面路径;自相矛盾的 chain)
+    裸 $;golden.root 是字面路径;source=reference_run 时 golden.root 不在运行
+    产物根下;自相矛盾的 chain)
    |
    v
 在 reference 上跑 cli.main([tree]) -> 退出码**就是**裁决 -> 0 才算证明通过
@@ -211,9 +212,16 @@ VerificationPlan.from_json -> problems() 必须 == []
 plan 称之为 golden 的东西留下来。reference 与 candidate 因此走同一条代码路径,
 「失败的 reference 运行什么都捕获不到」由构造保证成立。
 
+**golden 只能现做,不能外借。** 仓库提供的是*输入文件*;golden 来自跑本机原生构建。
+所以 `golden.source: reference_run` 时 `golden.root` 只允许是运行产物根
+(`{origin}`、`{results}`)——写在采集树之下的根指的是**项目自带的**文件,那只是
+"和另一台机器的编译器、操作系统、另一个年代结果一致",不是"这次构建跑对了"的证据。
+实测:一个老语料 132 个用例各带一份 `.out`,没有一份与同一批卡组在本机跑出的结果
+逐字节相同。
+
 `golden.source: reference_run` 证明的是 candidate **与 reference 一致**——这是
-*稳定性*,不是*正确性*。一个自带参考输出的项目手里有外部真值:在 `provenance` 里
-说明它。
+*稳定性*,不是*正确性*。一个自带参考输出的项目手里有外部真值,但那份输出是**输入**,
+所以要比对它就写进项目的 `declaration`。
 
 ---
 
