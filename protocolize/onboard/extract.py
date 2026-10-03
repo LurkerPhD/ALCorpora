@@ -1794,6 +1794,38 @@ def _verification_from_registry(proto: Protocol, build: Path,
                  'exit_accept': [0], 'case_timeout_s': 60}
     if suite_jobs:
         run['jobs'] = suite_jobs
+    # The assertions this shape can honestly make, from what the project
+    # DECLARED — never a fixed list.  A project whose suite prints its own
+    # section table declares `section_pattern`; one whose runner is the build
+    # system's own (`ctest`) prints the runner summary and nothing else.
+    # Emitting the table assertion unconditionally was measured to FAIL a
+    # plain ctest project: no section table exists, so the reader found
+    # nothing and the verdict read "a report that could not be read".
+    assertions: list[dict] = []
+    if (rules or {}).get('section_pattern'):
+        # The project's own table counts individual numerical CHECKS; the
+        # runner summary counts whole TESTS.  Neither subsumes the other, so
+        # both are read where both exist.  `require_min: {run: <floor>}` is
+        # the project's own magnitude and the conjunct that makes the others
+        # mean anything.
+        assertions.append(
+            {'kind': 'self_report', 'in': 'suite_stdout',
+             'section_pattern': rules['section_pattern'],
+             # The row that carries the section's TOTAL — the project's own
+             # word.  Not enumerated in code: which label is the total, like
+             # which sections exist, is the project's to say.
+             'total_label': rules.get('total_label', ''),
+             'require_min': {'run': 1},
+             'require_zero': ['numerr', 'otherr']})
+    # The runner's own summary, for any suite whose runner prints it.  This is
+    # the build system's spelling (`ctest`), not a project's.
+    assertions.append(
+        {'kind': 'self_report', 'in': 'suite_stdout',
+         'reader': {'pattern':
+                    r'(?P<pct>[\d.]+)%\s+tests passed,\s+'
+                    r'(?P<failed>\d+)\s+tests failed out of\s+'
+                    r'(?P<total>\d+)'},
+         'require_min': {'total': 1}, 'require_zero': ['failed']})
     return {
         'plan_version': 1,
         'target': {'kind': 'tree'},
@@ -1801,36 +1833,11 @@ def _verification_from_registry(proto: Protocol, build: Path,
         'inputs': {},
         'staging': [],
         'run': run,
-        'produced': [{'name': 'TESTING/**/*.out', 'as': 'driver_logs'}],
+        'produced': ([{'name': 'TESTING/**/*.out', 'as': 'driver_logs'}]
+                     if (rules or {}).get('section_pattern') else []),
         'golden': {'source': 'none', 'root': '{origin}', 'path': '',
                    'stamp': 'self_verifying.origin'},
-        'assertions': [
-            # Two authorities, and neither subsumes the other: the corpus's
-            # own table counts individual numerical CHECKS, the runner
-            # summary counts whole TESTS.  The table cannot see a driver that
-            # crashed before printing; the runner does not inspect the checks
-            # a completed driver reported.
-            #
-            # `require_min: {run: <floor>}` is the corpus's own magnitude and
-            # is the conjunct that makes the others mean anything: without it
-            # a run whose output never reached the reader is green on every
-            # count it could not see.
-            {'kind': 'self_report', 'in': 'suite_stdout',
-             'section_pattern': (rules or {}).get('section_pattern', ''),
-             # The row that carries the section's TOTAL — the corpus's own
-             # word ("ALL PRECISIONS" for LAPACK).  Not enumerated in code:
-             # which label is the total, like which sections exist, is the
-             # corpus's to say, so it travels in the plan.
-             'total_label': (rules or {}).get('total_label', ''),
-             'require_min': {'run': 1},
-             'require_zero': ['numerr', 'otherr']},
-            {'kind': 'self_report', 'in': 'suite_stdout',
-             'reader': {'pattern':
-                        r'(?P<pct>[\d.]+)%\s+tests passed,\s+'
-                        r'(?P<failed>\d+)\s+tests failed out of\s+'
-                        r'(?P<total>\d+)'},
-             'require_min': {'total': 1}, 'require_zero': ['failed']},
-        ],
+        'assertions': assertions,
         'report': {'repeats': 1},
         'summary': {'require_zero': ['diff', 'crash', 'timeout'],
                     'require_min': {'pass': 1}},
