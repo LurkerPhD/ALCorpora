@@ -13,6 +13,12 @@ A protocol that has not been **rebuilt from** (build) / **run** (verification)
 is not a product. Fortran is only the first *profile* — nothing in this repo
 may name a language, a build system, or a project.
 
+The build protocol is written as a `compile_commands.json` **array**: every
+element before the last is a compile entry (the four standard fields plus this
+protocol's extras), and the last is a node carrying the sections a compile
+database cannot express. It can be handed to a cc-only consumer unchanged —
+the array structure is never disturbed, and extra entries are permitted.
+
 `PLAN.md` is the plan, the acceptance criteria and the measured evidence;
 this file is how the thing actually runs. **Keep it current** — a diagram
 here that names a module that moved misleads the next reader exactly as a

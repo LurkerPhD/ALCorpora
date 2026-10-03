@@ -14,11 +14,14 @@ database:
 * which sources have to be GENERATED before any of it can compile.
 
 So this is the compile database as a **superset** rather than a second file
-beside it.  A consumer that understands only cc reads the four standard
-fields and ignores the rest (:meth:`CompileEntry.as_compile_command`), and
-a plain ``compile_commands.json`` is the legal weak form of a protocol
-(:meth:`Protocol.from_compile_commands`) whose compilation half is exact
-and whose products half is empty — so a consumer that needs a link line
+beside it.  On disk it IS a compile database: a JSON **array** whose elements
+are the compile entries, each carrying the four standard fields plus the
+extras below, and one final node carrying the sections a compile database
+cannot express.  A cc-only consumer reads the array directly and ignores what
+it does not know (:meth:`CompileEntry.as_compile_command` is the four-field
+view), and a plain ``compile_commands.json`` is the legal weak form of a
+protocol (:meth:`Protocol.from_compile_commands`) whose compilation half is
+exact and whose products half is empty — so a consumer that needs a link line
 fails loudly instead of inventing one.
 
 The concept the flow side rests on is the **extension-independent stem**
@@ -50,6 +53,12 @@ from protocolize.tree_anchor import (TREE, ProtocolError, capture_tree,  # noqa:
 #: onboarding skill and the flow, and guessing at a newer one would produce
 #: a build that is subtly not what the file describes.
 PROTOCOL_VERSION = 1
+
+#: The key that marks the ONE array element carrying the protocol's own
+#: sections.  The protocol is a compile_commands.json ARRAY, and a compile
+#: entry never has this key, so the marker is unambiguous — and a cc-only
+#: consumer reads every OTHER element and skips this one.
+_NODE_KEY = 'protocol_version'
 
 _ANY_SUFFIX = re.compile(r'\.[A-Za-z][A-Za-z0-9]*$')
 
@@ -371,6 +380,21 @@ class Protocol:
             for e in entries])
 
     # ── serde ─────────────────────────────────────────────────
+    def to_cc(self) -> list:
+        """The protocol as a bare ``compile_commands.json`` ARRAY.
+
+        This is the file :meth:`save` writes, and the shape is the point: a
+        cc-only consumer reads it DIRECTLY.  Every element before the last is
+        a compile entry — the four standard fields plus this protocol's
+        extras, which such a consumer ignores — and the LAST element is the
+        node (:data:`_NODE_KEY`) carrying the sections a compile database
+        cannot express (products, generated inputs, prepare, build, tests).
+        A reader that wants only a compile database stops at the entries.
+        """
+        node = self.to_json()
+        del node['compilation']
+        return [e.to_json() for e in self.compilation] + [node]
+
     def to_json(self) -> dict:
         # EVERY top-level section is always written, empty ones as [].  The
         # protocol's shape is a CONTRACT between the skill and the flow, and a
@@ -395,11 +419,33 @@ class Protocol:
 
     @classmethod
     def from_json(cls, d: 'dict | list') -> 'Protocol':
-        if isinstance(d, list):          # a bare compile_commands.json
-            return cls.from_compile_commands(d)
+        """Read a protocol from EITHER shape it is written in.
+
+        The on-disk shape is a bare ``compile_commands.json`` ARRAY
+        (:meth:`save`): every element before the last is a compile entry, and
+        the last is the node (:data:`_NODE_KEY`) carrying the sections a
+        compile database cannot.  A consumer that knows only a compile
+        database reads such a file directly, and a plain compile database — an
+        array with NO node — is the legal weak form.  The OBJECT shape is read
+        too, so a protocol captured before the array became the on-disk form
+        still loads.
+        """
+        if isinstance(d, list):
+            node = next((e for e in d
+                         if isinstance(e, dict) and _NODE_KEY in e), None)
+            entries = [e for e in d if e is not node]
+            if node is None:             # a plain compile_commands.json
+                return cls.from_compile_commands(entries)
+            return cls._from_object({**node, 'compilation': entries})
         if not isinstance(d, dict):
             raise ProtocolError(
-                f'protocol must be an object, got {type(d).__name__}')
+                f'protocol must be an array or an object, got '
+                f'{type(d).__name__}')
+        return cls._from_object(d)
+
+    @classmethod
+    def _from_object(cls, d: dict) -> 'Protocol':
+        """The protocol, from the object that carries every section."""
         ver = d.get('protocol_version', 0)
         if ver != PROTOCOL_VERSION:
             raise ProtocolError(
@@ -422,27 +468,24 @@ class Protocol:
         )
 
     def save(self, path: Path | str) -> None:
-        """Write the protocol, gzipped when the path says so.
+        """Write the protocol as a ``compile_commands.json`` array, in plain JSON.
 
-        Worth committing gzipped: a real corpus's protocol is megabytes of
-        repeated absolute paths, and it is the input the whole flow is
-        reproducible from.
+        PLAIN and ungzipped even where the path says otherwise: a gzipped file
+        is not one a cc consumer can read, and being readable as cc is the
+        point of the shape.  (A protocol committed gzipped still LOADS — see
+        :meth:`load` — this only governs what is written.)
         """
-        p = Path(path)
-        text = json.dumps(self.to_json(), indent=1, sort_keys=False)
-        if str(p).endswith('.gz'):
-            with gzip.open(p, 'wt', encoding='utf-8') as fh:
-                fh.write(text)
-        else:
-            p.write_text(text, encoding='utf-8')
+        Path(path).write_text(
+            json.dumps(self.to_cc(), indent=1, sort_keys=False),
+            encoding='utf-8')
 
     @classmethod
     def load(cls, path: Path | str) -> 'Protocol':
-        src = Path(path)
-        if str(src).endswith('.gz'):
-            with gzip.open(src, 'rt', encoding='utf-8') as fh:
-                return cls.from_json(json.load(fh))
-        return cls.from_json(json.loads(src.read_text(encoding='utf-8')))
+        """Read the protocol, whether it is plain JSON or committed gzipped."""
+        raw = Path(path).read_bytes()
+        if raw[:2] == b'\x1f\x8b':       # the gzip magic number
+            return cls.from_json(json.loads(gzip.decompress(raw).decode('utf-8')))
+        return cls.from_json(json.loads(raw.decode('utf-8')))
 
     def problems(self) -> list[str]:
         """Everything wrong with this protocol as written; ``[]`` is valid.
