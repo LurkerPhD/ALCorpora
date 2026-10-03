@@ -28,7 +28,10 @@
 
 - **没有 `facts_*.json` 之类的外部事实声明作为回退。** 抽不出来 = 抽取器有缺口，而不是
   改用外部文件兜底。项目必须自包含。
-- **构建协议是 `compile_commands.json` 的严格超集**：裸 JSON 数组，可直接当 cc 使用。
-  允许新增条目，但不许破坏 cc 本身的结构。
+- **构建协议 ≠ `compile_commands.json` 超集：当前不成立（OPEN）。** 实测 clangd 18.1.3 与
+  clang-check 都会**整份拒载**协议文件（`Failed to find compilation database`）—— 条目上
+  多一个 key 就触发 `Unknown key`，加载是 all-or-nothing；**只多一个 `stem` 即已如此**。
+  修复方向（协议改为目录：严格 cc + 伴生节点文件）已提出、未实现。
+  **除非跑过真消费者，不要声称它能直接当 cc 用。**
 - **提交信息用英文**；小步提交，一个提交一个主题。
 - **改 `protocolize/` 前先跑测试，改完立刻验证。**
