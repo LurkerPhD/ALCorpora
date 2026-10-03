@@ -121,11 +121,13 @@ def test_every_entry_carries_a_usable_command(built):
         assert 'gfortran' in e.command or 'f95' in e.command
 
 
-def test_the_variant_is_fortran_for_a_fortran_unit(built):
+def test_every_unit_is_recorded_once(built):
+    """The protocol keys a unit by its stem, so no stem appears twice."""
     from protocolize.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
-    assert proto.stems_by_variant('fortran') == {e.stem for e in proto.compilation}
+    stems = [e.stem for e in proto.compilation]
+    assert sorted(stems) == sorted(set(stems))
 
 
 # ── the stem identity ─────────────────────────────────────────

@@ -51,7 +51,7 @@ protocol from a real project is the best example. In brief:
 {
   "protocol_version": 1,
   "compilation": [ {directory, command, file, output,
-                    stem, variant, provides, uses, preprocess}, ... ],
+                    stem, language, provides, uses, preprocess}, ... ],
   "generated_inputs": [ {output, command, depends}, ... ],
   "products":         [ {output, kind, objects|members, libs, driver}, ... ]
 }
@@ -63,8 +63,9 @@ format can read this file. Everything else answers questions a compile
 database cannot, and each one is load-bearing:
 
 **`stem`** — the unit's identity with the extension removed and case kept.
-`isamax.f` and `isamax.cpp` are ONE unit and ONE link member; without a shared
-key, converting a unit makes the link line name an object nobody builds.
+It is the protocol's key: a product names its members as stems, so the link
+line refers to a unit by its identity rather than by the file that happens to
+hold it.
 
 **`provides` / `uses`** — the Fortran module graph. A unit converted to C++
 emits no `.mod`, so this has to be known BEFORE anything compiles. Read it

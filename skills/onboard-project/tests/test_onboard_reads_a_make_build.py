@@ -112,7 +112,7 @@ def test_a_make_build_yields_a_protocol(built):
 def test_every_unit_is_a_fortran_source_of_this_project(built):
     proto = _protocol(built)
     for e in proto.compilation:
-        assert e.variant == 'fortran', e.stem
+        assert e.language == 'fortran', e.stem
         assert not e.stem.endswith(('.f', '.f90')), e.stem
     assert {e.stem for e in proto.compilation} == {
         'mis/alpha', 'mis/beta', 'mds/main', 'mds/gamma'}, (

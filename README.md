@@ -40,8 +40,10 @@ stale comment does.
      rewritten.
    `$` is reserved: a literal dollar is `$$`, a bare `$` is refused.
 3. **The stem is the unit's identity**: one trailing extension removed, case
-   kept. `isamax.f` and `isamax.cpp` are ONE unit and ONE link member — which
-   is what lets a product's link line follow a unit from one form to the other.
+   kept. A product names its members as stems, so the link line refers to a
+   unit by its identity rather than by the file that happens to hold it. This
+   repo does not convert anything — it reads a build and REPLAYS it, so a
+   unit's language is just what it is, never a form to flip.
 4. **Do not guess.** Ambiguity is *refused*, never silently resolved: many
    candidate case declarations (would verify against a neighbour's cases),
    stem collisions (would drop a unit), a make `$(shell)` source nothing

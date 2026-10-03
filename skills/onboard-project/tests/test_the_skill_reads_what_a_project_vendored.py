@@ -56,7 +56,7 @@ def _proto(root: Path) -> Protocol:
         entries.append(CompileEntry(
             directory=str(f.parent), command=f'gfortran -c {f}',
             file=str(f), output=f'{TREE}/{rel}.o',
-            stem=str(rel.with_suffix('')), variant='fortran'))
+            stem=str(rel.with_suffix('')), language='fortran'))
     return Protocol(compilation=entries, comment='t')
 
 
@@ -98,7 +98,7 @@ def test_a_build_that_copied_the_sources_still_scopes_correctly(tmp_path):
     overlaid = [
         CompileEntry(directory=e.directory, command=e.command, file=e.file,
                      output=e.output,
-                     stem='src_overlay/' + e.stem, variant='fortran')
+                     stem='src_overlay/' + e.stem, language='fortran')
         for e in proto.compilation]
     roots = own_roots_for(Protocol(compilation=overlaid), tmp_path / 'b',
                           tmp_path, root)

@@ -72,7 +72,7 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = ['ExtractionError', 'Toolchain', 'extract_protocol']
 
 #: Extensions that are a translation unit's source, by language.  The split
-#: decides a stem's variant, and the variant is what a state table flips.
+#: decides a unit's recorded ``language``.
 FORTRAN_EXTS = frozenset({
     '.f', '.f77', '.for', '.f90', '.f95', '.f03', '.f08',
     '.F', '.F77', '.FOR', '.F90', '.F95', '.F03', '.F08',
@@ -679,20 +679,20 @@ def _units(tc: Toolchain) -> tuple[list[CompileEntry], dict[str, str]]:
         if src is None or src.suffix not in SOURCE_EXTS:
             continue                # an intermediate with no recoverable source
         stem = tc.stem_of(src)
-        variant = 'fortran' if src.suffix in FORTRAN_EXTS else 'cpp'
+        language = 'fortran' if src.suffix in FORTRAN_EXTS else 'cpp'
         by_object[key] = stem
-        if seen.get(stem) == variant:
-            # The same (stem, variant) twice is ONE translation unit compiled
-            # into several products: LAPACK builds 72 of TESTING's helpers
-            # into up to eight executables each.  The protocol keys on the
-            # stem, so one entry describes it.
+        if seen.get(stem) == language:
+            # The same stem twice is ONE translation unit compiled into
+            # several products: LAPACK builds 72 of TESTING's helpers into up
+            # to eight executables each.  The protocol keys on the stem, so
+            # one entry describes it.
             continue
-        if stem in seen and seen[stem] != variant:
+        if stem in seen and seen[stem] != language:
             raise ExtractionError(
-                f'stem {stem!r} is compiled as BOTH variants in one build '
-                f'({seen[stem]} and {variant}); which one this tree built '
+                f'stem {stem!r} is compiled as two languages in one build '
+                f'({seen[stem]} and {language}); which one this tree built '
                 f'cannot be decided from the database alone')
-        seen[stem] = variant
+        seen[stem] = language
         provides, uses = _module_edges(src)
         # Paths first, then the tree placeholder: absolutising uses the
         # capture directory, which the placeholder would have erased.
@@ -706,9 +706,9 @@ def _units(tc: Toolchain) -> tuple[list[CompileEntry], dict[str, str]]:
             stem=stem,
             provides=provides,
             uses=uses,
-            variant=variant,
+            language=language,
             preprocess=(tc.in_tree_space_cmd(pp)
-                        if variant == 'fortran' else ''),
+                        if language == 'fortran' else ''),
         ))
     if not out:
         raise ExtractionError(
@@ -807,19 +807,25 @@ def _absolutise_paths(command: str, directory: str) -> str:
 
 
 def _module_edges(src: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """The Fortran modules *src* defines and uses.
+    """The modules *src* defines and uses, AS THE SOURCE SPELLS THEM.
 
-    Read from the source text, because the build system does not record it
-    and a CONVERTED unit emits no ``.mod``: the graph has to be known before
-    anything compiles, or a scheduled consumer finds no provider.
+    Case is KEPT: how a module name is spelled is the language profile's
+    business, not this tool's — lowercasing here would be this repo knowing a
+    Fortran rule.  Matching two spellings is a separate question, done
+    case-insensitively where the graph is built (see flat_cmake), because a
+    language that is case-insensitive to its compiler must not have a graph
+    that misses on case.
+
+    Read from the source text, because the build system does not record the
+    module graph and a build system needs it to order a compile.
     """
     try:
         text = src.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return (), ()
-    provides = tuple(dict.fromkeys(m.group(1).lower()
+    provides = tuple(dict.fromkeys(m.group(1)
                                    for m in _MODULE_PROVIDES.finditer(text)))
-    uses = tuple(dict.fromkeys(m.group(1).lower()
+    uses = tuple(dict.fromkeys(m.group(1)
                                for m in _MODULE_USES.finditer(text)))
     return provides, uses
 

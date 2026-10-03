@@ -108,8 +108,12 @@ class CompileEntry:
     provides: tuple[str, ...] = ()
     #: Fortran modules this unit USES.
     uses: tuple[str, ...] = ()
-    #: ``'fortran'`` or ``'cpp'`` — which side of the flip this entry is.
-    variant: str = ''
+    #: The source's LANGUAGE, a free-form label (``'fortran'``, ``'cpp'``,
+    #: …).  Recorded because a consumer may need to know what it is compiling
+    #: — the generator picks the CMake language from it — but it is NOT an
+    #: identity: the stem is.  Older protocols spelled this ``variant`` and
+    #: are still read.
+    language: str = ''
     #: The PREPROCESS step, when the build has one.
     #:
     #: A build system may compile a Fortran source in two steps with
@@ -145,8 +149,8 @@ class CompileEntry:
             out['provides'] = list(self.provides)
         if self.uses:
             out['uses'] = list(self.uses)
-        if self.variant:
-            out['variant'] = self.variant
+        if self.language:
+            out['language'] = self.language
         if self.preprocess:
             out['preprocess'] = self.preprocess
         return out
@@ -173,7 +177,7 @@ class CompileEntry:
             stem=canonical_stem(d.get('stem') or ''),
             provides=tuple(d.get('provides') or ()),
             uses=tuple(d.get('uses') or ()),
-            variant=d.get('variant') or '',
+            language=(d.get('language') or d.get('variant') or ''),
             preprocess=d.get('preprocess') or '',
         )
 
@@ -229,11 +233,10 @@ class Product:
                    flags=tuple(d.get('flags') or ()))
 
 
-#: Every field a `build` section always carries (empty when the corpus
-#: declares none).  The section is a CONTRACT, so its SHAPE is fixed at the
-#: protocol boundary rather than left to whichever producer happened to fill
-#: it: a consumer reads `d['build']['flags']['optimize']` and must not have to
-#: ask whether this corpus spells `flags` or `optimize` at the top.
+#: The keys the `build` section may carry.  All are OPTIONAL: a project
+#: declares only the ones it has, and the section is `{}` for a project that
+#: declares none.  Nothing in this tool branches on any of them — they are
+#: extras a CONSUMER may read, not facts the mechanism requires.
 BUILD_SECTIONS: tuple[str, ...] = ('flags', 'module_dirs', 'include_dirs')
 
 
@@ -242,20 +245,31 @@ def normalise_build(build: dict | None) -> dict:
 
     Flattens the two spellings a producer may use for the optimization map --
     `{'flags': {'optimize': {...}}}` (the template) and a top-level
-    `{'optimize': {...}}` (a config did it that way) -- and fills every field
-    in :data:`BUILD_SECTIONS`, so every protocol's `build` is byte-for-byte
-    the same shape.
+    `{'optimize': {...}}` (a config did it that way).
+
+    Every field is OPTIONAL and an empty one is left OUT, so a project's
+    `build` is exactly what it declares: `{}` when it declares nothing.  The
+    fields are toolchain-specific extras (an optimization remap, module and
+    include directories) — a general project has none of them, and no generic
+    code branches on them.
     """
     b = dict(build or {})
     flags = dict(b.get('flags') or {})
     optimize = dict(flags.get('optimize') or b.pop('optimize', None) or {})
-    b.pop('flags', None)
-    return {
-        'flags': {'optimize': {str(k): str(v) for k, v in optimize.items()},
-                  'policy': [str(x) for x in (flags.get('policy') or ())]},
-        'module_dirs': [str(x) for x in (b.get('module_dirs') or ())],
-        'include_dirs': [str(x) for x in (b.get('include_dirs') or ())],
-    }
+    policy = [str(x) for x in (flags.get('policy') or ())]
+    out: dict = {}
+    if optimize or policy:
+        inner: dict = {}
+        if optimize:
+            inner['optimize'] = {str(k): str(v) for k, v in optimize.items()}
+        if policy:
+            inner['policy'] = policy
+        out['flags'] = inner
+    for key in ('module_dirs', 'include_dirs'):
+        vals = [str(x) for x in (b.get(key) or ())]
+        if vals:
+            out[key] = vals
+    return out
 
 
 # ── the protocol ──────────────────────────────────────────────
@@ -344,18 +358,6 @@ class Protocol:
     build: dict = field(default_factory=lambda: normalise_build(None))
     version: int = PROTOCOL_VERSION
     comment: str = ''
-
-    # ── identity ──────────────────────────────────────────────
-    def variants(self) -> dict[str, dict[str, CompileEntry]]:
-        """``{stem: {variant: entry}}`` — the pairing a flip needs."""
-        out: dict[str, dict[str, CompileEntry]] = {}
-        for e in self.compilation:
-            out.setdefault(e.stem, {})[e.variant or 'fortran'] = e
-        return out
-
-    def stems_by_variant(self, variant: str) -> set[str]:
-        return {e.stem for e in self.compilation
-                if (e.variant or 'fortran') == variant}
 
     # ── projections ───────────────────────────────────────────
     def to_compile_commands(self) -> list[dict]:
@@ -495,20 +497,18 @@ class Protocol:
         """
         bad: list[str] = []
 
-        seen: dict[tuple, int] = {}
+        seen: dict[str, int] = {}
         for i, e in enumerate(self.compilation):
             for name in ('directory', 'command', 'file', 'output'):
                 why = check_tree_invariant(getattr(e, name))
                 if why:
                     bad.append(f'compilation[{i}].{name}: {why}')
-            key = (e.stem, e.variant or 'fortran')
-            if key in seen:
+            if e.stem in seen:
                 bad.append(
-                    f'compilation[{i}]: stem {e.stem!r} appears twice in '
-                    f'variant {key[1]!r} — the two variants of one stem are '
-                    f'the point, two of the same one compile twice and '
-                    f'archive under one name')
-            seen[key] = i
+                    f'compilation[{i}]: stem {e.stem!r} appears twice — the '
+                    f'stem is the unit\'s identity, so two entries for one '
+                    f'stem compile twice and archive under one name')
+            seen[e.stem] = i
 
         for i, g in enumerate(self.generated_inputs):
             for name in ('output', 'command'):

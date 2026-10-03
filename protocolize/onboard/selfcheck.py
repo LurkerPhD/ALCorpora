@@ -168,7 +168,6 @@ def _mirror(source: Path, dest: Path) -> None:
 
 def self_check(protocol: Protocol, *, tree: Path | str,
                reference_tree: Path | str, work_root: Path | str,
-               runtime_include: str | Path | None = None,
                jobs: int = 8) -> CheckReport:
     """Rebuild *protocol* from scratch and compare it to the real build.
 
@@ -199,12 +198,11 @@ def self_check(protocol: Protocol, *, tree: Path | str,
         if out.is_file():
             out.unlink()
 
-    include = str(runtime_include or Path(__file__).resolve().parents[1])
     report = CheckReport(units=len(protocol.compilation),
                          products=len(protocol.products))
-    # No state: nothing is converted, so every unit keeps the form its
-    # protocol entry records — which is the form the capture build used.
-    flat_cmake(protocol, tree=scratch, runtime_include=include)
+    # No extra declarations: a pure replay of the protocol needs no include
+    # directory and no extra link — the protocol records what the build does.
+    flat_cmake(protocol, tree=scratch)
 
     build = work / 'build'
     build.mkdir(parents=True, exist_ok=True)

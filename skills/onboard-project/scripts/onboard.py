@@ -201,10 +201,10 @@ def main(argv=None) -> int:
             print(f'  - {w}', file=sys.stderr)
         return 1
 
-    variants: dict = {}
+    languages: dict = {}
     for e in proto.compilation:
-        variants[e.variant] = variants.get(e.variant, 0) + 1
-    print(f'  {len(proto.compilation)} units {variants}, '
+        languages[e.language] = languages.get(e.language, 0) + 1
+    print(f'  {len(proto.compilation)} units {languages}, '
           f'{len(proto.generated_inputs)} generated sources, '
           f'{len(proto.products)} products, 0 problems')
 

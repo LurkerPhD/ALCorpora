@@ -25,9 +25,9 @@ def _proto() -> Protocol:
     return Protocol(
         compilation=[
             CompileEntry(directory='/b', command='gcc -c /s/a.c -o a.o',
-                         file='/s/a.c', output='a.o', stem='a', variant='cpp'),
+                         file='/s/a.c', output='a.o', stem='a', language='cpp'),
             CompileEntry(directory='/b', command='gcc -c /s/b.c -o b.o',
-                         file='/s/b.c', output='b.o', stem='b', variant='cpp',
+                         file='/s/b.c', output='b.o', stem='b', language='cpp',
                          provides=('m',), uses=('m',)),
         ],
         products=[Product(output='/b/libx.a', kind='archive',

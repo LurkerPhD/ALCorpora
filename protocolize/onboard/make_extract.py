@@ -316,7 +316,7 @@ def extract_make_protocol(tree: str | Path, *,
                 directory=str(directory),
                 command=_synthetic_compile(argv, src, stem + '.o'),
                 file=tc.in_tree_space(src), output=stem + '.o', stem=stem,
-                variant='cpp' if src.suffix in ('.c', '.cpp', '.cc', '.cxx')
+                language='cpp' if src.suffix in ('.c', '.cpp', '.cc', '.cxx')
                 else 'fortran'))
 
     # Archives first, so a link that names one can find its members.
@@ -383,8 +383,8 @@ def _parse_compile(tc: Toolchain, line: str, argv: list[str],
         file=tc.in_tree_space(src_path),
         output=tc.in_tree_space(obj_out),
         stem=tc.stem_of(src_path),
-        variant=('cpp' if src_path.suffix in ('.c', '.cpp', '.cc', '.cxx')
-                 else 'fortran'),
+        language=('cpp' if src_path.suffix in ('.c', '.cpp', '.cc', '.cxx')
+                  else 'fortran'),
     ), obj_out.resolve()
 
 

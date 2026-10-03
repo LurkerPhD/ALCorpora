@@ -16,8 +16,8 @@
     "_output": "The object the command produces, as the build spelled it.",
     "stem": "SRC/isamax",
     "_stem": "The unit's extension-independent identity, and the protocol's KEY. A product's members are stems.",
-    "variant": "fortran",
-    "_variant": "'fortran' or 'cpp' -- which form of this stem this entry describes.",
+    "language": "fortran",
+    "_language": "The source's language -- a free-form label ('fortran', 'cpp', ...). Recorded because a consumer may need to know what it compiles; NOT an identity (the stem is).",
     "provides": [
       "la_constants"
     ],
@@ -35,13 +35,13 @@
     "file": "${TREE}/SRC/sasum.f",
     "output": "SRC/CMakeFiles/x.dir/sasum.f.o",
     "stem": "SRC/sasum",
-    "variant": "fortran"
+    "language": "fortran"
   },
   {
     "_README": [
       "THE FILE IS A compile_commands.json ARRAY. Every element before the last is",
       "a compile ENTRY -- the four standard fields (directory/command/file/output)",
-      "plus this protocol's extras (stem, provides, uses, variant, preprocess),",
+      "plus this protocol's extras (stem, provides, uses, language, preprocess),",
       "which a cc-only consumer IGNORES. The LAST element is the NODE below: an",
       "element marked `protocol_version` (a compile entry never has that key) that",
       "carries the sections a compile database cannot express. So the file can be",
