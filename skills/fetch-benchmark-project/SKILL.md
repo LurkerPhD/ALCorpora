@@ -82,6 +82,32 @@ python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
     --facts facts.json --declaration rules.json
 ```
 
+**The defaults are CMake+Ninja, and they are only defaults.** `--configure`,
+`--build`, `--test` and `--tree-subdir` all describe ONE build system, so a
+project that is not CMake must say so or it is refused at
+`cmake -S ...` — a failure that reads as "this project does not build" when
+the truth is that nobody told the loop how. For a hand-written make project,
+for instance:
+
+```bash
+python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+    --configure "" \
+    --build "make -C source/mis && make -C source/mds" \
+    --test "<a script that runs the program on a deck and checks its own banner>" \
+    --tree-subdir source
+```
+
+`--configure ""` is the right answer when a project has no configure step at
+all — "nothing to do" is a true statement about such a project, while
+running CMake at it is not.
+
+**Commands that reference the source.** `{src}` in any of these is replaced
+with the project's source directory, so a path can be written relative to it
+rather than absolute. When a project needs a real verification driver that its
+source tree does not contain, write one (a small script beside the project's
+other onboarding inputs) and point `--test` at it — that script is a
+per-project research result, exactly like the build commands.
+
 ### Diagnosing a native build failure
 
 The failure is INFORMATION, and it names its own cause. Read it, decide the

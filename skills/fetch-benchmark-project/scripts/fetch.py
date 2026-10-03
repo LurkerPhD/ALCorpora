@@ -358,7 +358,8 @@ def main(argv=None) -> int:
                         'protocol so a fresh checkout reproduces the build')
     p.add_argument('--readmit', action='store_true',
                    help='re-prove a project already in benchmark/ (its SOURCE '
-                        'is the argument), after a renumber or a tool change')
+                        'is the argument), after a renumber or a tool change. '
+                        'The benchmark FOLDER or its inner checkout both work.')
     p.add_argument('--facts', default=None,
                    help='JSON file of facts the project declares that its '
                         'tree cannot show (a restart chain, the preparation '
@@ -377,6 +378,18 @@ def main(argv=None) -> int:
 
     if args.readmit:
         dest = Path(args.source).resolve()
+        # `--readmit` names the BENCHMARK FOLDER, but the inner checkout is
+        # the natural thing to paste, and naming it used to die with
+        # `ValueError: invalid literal for int() with base 10: 'NAS'` — a
+        # traceback that says nothing about what was wrong.  A directory with
+        # no leading number IS an inner checkout, so it is accepted.
+        if not dest.name[:3].isdigit() and dest.parent.name[:3].isdigit():
+            dest = dest.parent
+        if not dest.name[:3].isdigit():
+            print(f'REFUSED: {dest} is not a benchmark folder — its name does '
+                  f'not begin with an admission number (001-…).  Pass the '
+                  f'folder, e.g. benchmark/009-<name>.', file=sys.stderr)
+            return 2
         src = _inner_source(dest)
         number = int(dest.name[:3])
         if not src.is_dir():
