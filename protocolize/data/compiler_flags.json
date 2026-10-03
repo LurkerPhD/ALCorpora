@@ -1,0 +1,189 @@
+{
+  "comment": "How each compiler driver SPELLS its options, as DATA rather than as an if-chain. The set is enumerable: a driver's option grammar is a fixed, documented thing, and every entry here is a fact about the DRIVER, never about a project. Consumer: src/flat_cmake.py, recovering a unit's own flags from its recorded command.",
+  "why_arity_matters": "Arity is the only thing that has to be right. A flag that takes an operand but is counted as taking none leaves the operand behind as a bare token, and the compiler reads it as another input file. A flag with NO operand counted as taking one swallows whatever follows it. Both are silent: the build either fails far away or quietly compiles something else.",
+  "arity": {
+    "structural_pair": {
+      "comment": "The operand names an OUTPUT, a dependency file or a target, so it goes with the flag when the flag is dropped. Kept, `-o <path>` reaches the compiler among its options and it answers 'output filename specified twice'.",
+      "all": [
+        "-o",
+        "-MT",
+        "-MF",
+        "-MQ"
+      ]
+    },
+    "semantic_pair": {
+      "comment": "The operand is part of what the flag MEANS, so both travel into the unit's options.",
+      "all": [
+        "-U",
+        "-D"
+      ]
+    },
+    "path_pair": {
+      "comment": "The operand is a SEARCH PATH. -I is universal; a module directory is spelled -J by gfortran and -module by ifort/ifx, and getting that wrong is what breaks every `use` in a replay rather than anything visible at the flag itself.",
+      "all": [
+        "-I",
+        "-isystem"
+      ],
+      "by_driver": {
+        "gfortran": [
+          "-I",
+          "-J",
+          "-isystem"
+        ],
+        "ifort": [
+          "-I",
+          "-module",
+          "-isystem"
+        ],
+        "ifx": [
+          "-I",
+          "-module",
+          "-isystem"
+        ],
+        "flang": [
+          "-I",
+          "-J",
+          "-isystem"
+        ],
+        "clang": [
+          "-I",
+          "-isystem"
+        ]
+      }
+    },
+    "link_only": {
+      "comment": "Belongs to a LINK, never to a compile of one source. A link line that compiles a source inside it carries these because it is also the link; leaving them in that source's compile options makes the compiler report 'linker input file unused because linking not done'.",
+      "all": [
+        "-l",
+        "-L",
+        "-Wl,",
+        "-shared",
+        "-static"
+      ]
+    },
+    "module_dir": {
+      "comment": "Flags naming where MODULE files go. Removed from a unit's options: a module directory is not a per-unit fact -- it is where a whole build's modules go, and the build system needs it to work out WHICH UNIT MUST COMPILE FIRST. A `.mod` is a compile-time dependency and nothing in a flat list of sources says so. Left in a unit's options it both scatters that knowledge and suppresses the dependency scan; measured on LAPACK, whose `la_xisnan` `use la_constants` went unordered and failed on a module file not yet written. Spellings differ per driver, which is why this is a table entry and not a literal.",
+      "by_driver": {
+        "gfortran": [
+          "-J",
+          "-fmoddir"
+        ],
+        "ifort": [
+          "-module",
+          "-module:"
+        ],
+        "ifx": [
+          "-module",
+          "-module:"
+        ],
+        "flang": [
+          "-J",
+          "-module",
+          "-fmoddir"
+        ],
+        "cxx": []
+      }
+    },
+    "drop": {
+      "comment": "Flags with no operand that are dropped. These describe the BUILD's own mechanics -- which intermediate it consumes, which dependency file it writes -- and none of them is a fact about the unit. `-fpreprocessed` is the example: it is true of the intermediate this build's scan step produced, and false of the source a replay compiles.",
+      "all": [
+        "-c",
+        "-S",
+        "-E",
+        "-fpreprocessed",
+        "-pipe",
+        "-MMD",
+        "-MP"
+      ]
+    },
+    "keep_single": {
+      "comment": "Flags with no operand that are KEPT. A flag having no operand says nothing about whether it means something -- `-fno-automatic` and `-O3` are single tokens and both decide how the unit is compiled. Measured: collapsing these into the drop set silently removed -fno-automatic, -fno-range-check, -fallow-argument-mismatch and -O3 from every MYSTRAN unit, which changes what the code does rather than how fast it runs.",
+      "all": [
+        "-w",
+        "-g",
+        "-g0",
+        "-g1",
+        "-g3",
+        "-static",
+        "-shared",
+        "-fPIC",
+        "-fpic",
+        "-fPIE",
+        "-cpp",
+        "-nocpp",
+        "-fno-automatic",
+        "-frecursive",
+        "-finit-local-zero",
+        "-fcray-pointer",
+        "-fno-range-check",
+        "-fno-strict-aliasing",
+        "-fallow-argument-mismatch",
+        "-fallow-invalid-boz",
+        "-fdefault-integer-8",
+        "-fdefault-real-8",
+        "-fcheck=bounds",
+        "-fcheck=all",
+        "-fcf-protection=none",
+        "-fno-tree-vectorize",
+        "-fno-tree-copy-prop",
+        "-fno-tree-dominator-opts",
+        "-fno-tree-dse",
+        "-fno-tree-fre",
+        "-fno-tree-pre",
+        "-fno-code-hoisting",
+        "-fno-tree-loop-distribute-patterns",
+        "-O0",
+        "-O1",
+        "-O2",
+        "-O3",
+        "-Os",
+        "-fpp",
+        "-nofpp",
+        "-fast",
+        "-xHost",
+        "-qopenmp",
+        "-auto",
+        "-zero",
+        "-assume=byterecl",
+        "-W0",
+        "-W1",
+        "-diag-disable",
+        "-std=c++17",
+        "-std=c++20",
+        "-Wall",
+        "-Wextra",
+        "-Wno-ignored-attributes",
+        "-Wno-stringop-overflow"
+      ]
+    }
+  },
+  "drivers": {
+    "comment": "basename PREFIX -> family. Asked of the executable's own basename, so /usr/bin/gfortran and a variable holding mpif90 are both recognised.",
+    "gfortran": [
+      "gfortran",
+      "mpif90",
+      "mpif77",
+      "f95",
+      "f90"
+    ],
+    "ifort": [
+      "ifort",
+      "ifx",
+      "mpiifort"
+    ],
+    "flang": [
+      "flang",
+      "flang-new"
+    ],
+    "cxx": [
+      "g++",
+      "c++",
+      "clang++",
+      "mpicxx",
+      "mpic++",
+      "cc",
+      "gcc",
+      "clang"
+    ]
+  }
+}

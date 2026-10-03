@@ -199,7 +199,7 @@ def self_check(protocol: Protocol, *, tree: Path | str,
         if out.is_file():
             out.unlink()
 
-    include = str(runtime_include or Path(__file__).resolve().parents[2])
+    include = str(runtime_include or Path(__file__).resolve().parents[1])
     report = CheckReport(units=len(protocol.compilation),
                          products=len(protocol.products))
     # No state: nothing is converted, so every unit keeps the form its
