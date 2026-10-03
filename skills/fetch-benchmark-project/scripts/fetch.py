@@ -21,7 +21,6 @@ Exit status: 0 legal, 1 not legal, 2 usage.
 
 from __future__ import annotations
 
-import argparse
 import json
 import shutil
 import subprocess
@@ -121,7 +120,15 @@ def fetch(source: str, dest: Path, *, retries: int = 3) -> None:
             print(f'  clone attempt {attempt}/{retries} failed: {tail}',
                   file=sys.stderr)
         raise FetchError(f'could not clone {source}: {last}')
-    shutil.copytree(source, dest, symlinks=True)
+    try:
+        shutil.copytree(source, dest, symlinks=True)
+    except OSError as exc:
+        # The local-path half has to keep the same promise the clone half
+        # does.  Measured: a mistyped local path exited through a raw
+        # `FileNotFoundError` traceback, so the entry point's contract —
+        # exit 1 with the reason — was broken by the one branch that never
+        # got the treatment.
+        raise FetchError(f'could not copy {source}: {exc}') from exc
 
 
 def run(shell_line: str, cwd: Path) -> tuple[bool, str]:
@@ -359,153 +366,28 @@ def _require_present(path: Path | None, what: str) -> Path | None:
     return path
 
 
+
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument('source', help='github url, or a local path to copy')
-    p.add_argument('--name', default=None,
-                   help='the project name (default: the source basename)')
-    p.add_argument('--configure', default='cmake -S {src} -B {src}/build -G Ninja',
-                   help='the native CONFIGURE command (default: CMake+Ninja)')
-    p.add_argument('--build', default='cmake --build {src}/build',
-                   help='the native BUILD command')
-    p.add_argument('--test', default='ctest --test-dir {src}/build',
-                   help='the native VERIFY command')
-    p.add_argument('--tree-subdir', default='build',
-                   help='the build directory, relative to the source')
-    p.add_argument('--prepare', default=None,
-                   help='JSON list of one-time prepare ops the SKILL diagnosed '
-                        '(each with a `check` and a `run`); recorded into the '
-                        'protocol so a fresh checkout reproduces the build')
-    p.add_argument('--readmit', action='store_true',
-                   help='re-prove a project already in benchmark/ (its SOURCE '
-                        'is the argument), after a renumber or a tool change. '
-                        'The benchmark FOLDER or its inner checkout both work.')
-    p.add_argument('--facts', default=None,
-                   help='JSON file of facts the project declares that its '
-                        'tree cannot show (a restart chain, the preparation '
-                        'its programs need to run). Read by the capture — see '
-                        'the "facts declaration" section of the skill. A '
-                        'relative path is resolved against the project source.')
-    p.add_argument('--declaration', default=None,
-                   help='the file where the project states its comparison '
-                        'rules (volatile lines, numeric slack). Passed IN, '
-                        'never searched for. A relative path is resolved '
-                        'against the project source.')
-    args = p.parse_args(argv)
-    args.prepare_ops = []
-    if args.prepare:
-        args.prepare_ops = json.loads(Path(args.prepare).read_text())
+    """Run the admission flow — delegated to the single entry point.
 
-    if args.readmit:
-        dest = Path(args.source).resolve()
-        # `--readmit` names the BENCHMARK FOLDER, but the inner checkout is
-        # the natural thing to paste, and naming it used to die with
-        # `ValueError: invalid literal for int() with base 10: 'NAS'` — a
-        # traceback that says nothing about what was wrong.  A directory with
-        # no leading number IS an inner checkout, so it is accepted.
-        if not dest.name[:3].isdigit() and dest.parent.name[:3].isdigit():
-            dest = dest.parent
-        if not dest.name[:3].isdigit():
-            print(f'REFUSED: {dest} is not a benchmark folder — its name does '
-                  f'not begin with an admission number (001-…).  Pass the '
-                  f'folder, e.g. benchmark/009-<name>.', file=sys.stderr)
-            return 2
-        src = _inner_source(dest)
-        number = int(dest.name[:3])
-        if not src.is_dir():
-            print(f'REFUSED: {src} is not a directory', file=sys.stderr)
-            return 1
-        print(f're-proving #{number:03d} {dest.name}')
-        # A renumber (or a tool change) invalidates the previous build: its
-        # recorded paths name the OLD directory, so configure afresh.
-        #
-        # An IN-SOURCE build cannot be cleared by removing its directory — that
-        # directory IS the checkout — so the build system's own GENERATED files
-        # are removed instead and the sources are left alone.  Both halves
-        # matter:
-        #   * Removing the whole tree deletes the project (it is the source).
-        #   * Removing NOTHING is not neutral either: a stale cache re-runs the
-        #     project's configure against its own old answers, and a CMake
-        #     `set(... CACHE ... FORCE)` in the project can then OVERRIDE the
-        #     flags this run passes.  Measured: a corpus mapped a deprecated
-        #     option to a new one by force, so `-DNEW=EMBEDDED` kept resolving
-        #     to the OLD value, the build linked a system library that is not
-        #     installed, and it failed as "does not build" — a diagnosis about
-        #     the project for a fact about a leftover file.
-        bd = src / args.tree_subdir
-        generated = ((bd / 'CMakeCache.txt').is_file()
-                     or (bd / 'build.ninja').is_file()
-                     or (bd / 'CMakeFiles').is_dir())
-        if not generated:
-            pass
-        elif bd != src:
-            shutil.rmtree(bd, ignore_errors=True)
-        else:
-            # The build system's own state, and nothing else.  A hand-written
-            # `Makefile` is deliberately absent from this list: only files
-            # CMake is known to generate are touched, so a project's own file
-            # can never be the thing this deletes.
-            for name in ('CMakeCache.txt', 'CMakeFiles', 'build.ninja',
-                         '.ninja_deps', '.ninja_log', 'cmake_install.cmake'):
-                target = bd / name
-                if target.is_dir():
-                    shutil.rmtree(target, ignore_errors=True)
-                elif target.exists():
-                    target.unlink()
-        ok, log, remedies = native(src, args)
-        if not ok:
-            # NOT recorded.  A re-prove's failure is "could not re-prove", not
-            # "refused": the row already holds a state that was ESTABLISHED,
-            # and overwriting it destroys that fact.  Measured: an operator's
-            # malformed invocation (the CMake defaults against a make project)
-            # turned an established PASS into REFUSED, and nothing in the CSV
-            # said the run had been misconfigured rather than the project
-            # having regressed.
-            print('NOT RE-PROVED: the project does not build and verify with '
-                  'the native commands given.\n' + log, file=sys.stderr)
-            print(f'  the row for #{number:03d} is UNCHANGED — fix the '
-                  f'--configure/--build/--test arguments and re-run.',
-                  file=sys.stderr)
-            return 1
-        print('  native build + verify: OK')
-        return prove_legal(dest, src, src / args.tree_subdir, number,
-                           dest.name.split('-', 1)[-1], remedies,
-                           facts=_require_present(
-                               _declared(args.facts, src), '--facts'),
-                           declaration=_require_present(
-                               _declared(args.declaration, src),
-                               '--declaration'))
+    The flow itself lives in `admit.py` at the repository root: that is the
+    DRIVER, and this script is the mechanical half it drives. One
+    implementation, deliberately — two copies of a flow drift apart, and the
+    copy that drifts is always the one nobody runs.
 
-    src_name = args.name or Path(args.source.rstrip('/')).stem
-    src_name = src_name[:-4] if src_name.endswith('.git') else src_name
-    n = next_number(BENCH)
-    dest = BENCH / f'{n:03d}-{src_name}'
-    print(f'admitting #{n:03d} {src_name} -> {dest}')
-
-    if dest.exists():
-        print(f'REFUSED: {dest} already exists', file=sys.stderr)
-        return 1
-    try:
-        fetch(args.source, dest / src_name)
-    except FetchError as exc:
-        print(f'REFUSED: {exc}', file=sys.stderr)
-        return 1
-    src = dest / src_name
-    ok, log, remedies = native(src, args)
-    if not ok:
-        print('REFUSED: the project does not build and verify natively.\n' + log,
-              file=sys.stderr)
-        record_row(n, src_name, native='no', build_protocol_a='no',
-                   verify_on_project_b='no', verify_on_replay_b='no',
-                   status='REFUSED', notes='does not build/verify natively')
-        return 1
-    print('  native build + verify: OK')
-    return prove_legal(dest, src, src / args.tree_subdir, n, src_name,
-                       remedies,
-                       facts=_require_present(
-                           _declared(args.facts, src), '--facts'),
-                       declaration=_require_present(
-                           _declared(args.declaration, src), '--declaration'))
+    `globals()` is handed over rather than letting `admit` re-load this file
+    from disk, so the driver sees the SAME objects this module sees. That is
+    what keeps the mechanical half patchable: a caller that replaces `native`
+    or `BENCH_CSV` here replaces what the driver will actually call.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('admit_driver',
+                                                  REPO / 'admit.py')
+    if spec is None or spec.loader is None:
+        raise RuntimeError('cannot load admit.py from the repository root')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.main(argv, namespace=globals())
 
 
 if __name__ == '__main__':
