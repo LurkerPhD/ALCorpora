@@ -76,6 +76,10 @@ python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X
 python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
     --build "<the project's build, with any flags you found>" \
     --prepare fix.json     # ops YOU diagnosed, each {op, check, run}
+# ... and when the cases run but report nothing, the project's own
+# declaration of what its programs need:
+python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+    --facts facts.json --declaration rules.json
 ```
 
 ### Diagnosing a native build failure
@@ -106,6 +110,27 @@ fix, make the fix reproduce, and retry — do not paper over it.
 4. **Nothing is guessed.** A fix you cannot confirm, or a `check` you cannot
    write, is not a fix — it is a change to the project the next reader cannot
    reproduce.
+
+### When the cases run but every one reports nothing
+
+A program that needs a home directory, a resource directory or a *program
+config* before it will run does not fail — it exits 0 and writes nothing, and
+that reads as a broken project instead of a missing declaration. The names
+(home variable, config file, the text inside it, the resource directory) are
+facts about THAT project and nothing in the tree can show them, so they are
+**declared**: write them into a `facts.json` beside the source and pass it
+with `--facts`. The capture refuses a declaration that names a resource the
+tree does not have, rather than skipping it, because a run that cannot start
+must never report a difference.
+
+`--declaration` is the other half: the file where the project states its
+COMPARISON rules (which lines are volatile, how much numeric slack its
+physics allows). Pass it in; never search for it, because a search that
+widened until it found something would find a neighbour's.
+
+Both are per-project research results, exactly like the native build
+commands. Relative paths resolve against the project source, so a facts file
+kept beside the source travels with it.
 
 ## The layout, and the one rule about it
 
