@@ -1,0 +1,85 @@
+"""A re-prove that fails must not erase an established result.
+
+The row for a project in `benchmark.csv` records a proof that was CARRIED OUT.
+A `--readmit` that fails establishes nothing — and its failure is often about
+the invocation rather than the project, since `--configure`/`--build`/`--test`
+all default to CMake.
+
+Measured: an operator's re-prove of a make project with the default CMake
+flags failed the native step, and the tool overwrote the project's `PASS` row
+with `REFUSED` — every other column blanked.  The CSV then reported a REGRESSED
+project when the truth was a misconfigured command, and nothing recorded which
+of the two had happened.
+
+So a failed re-prove reports and leaves the row alone.  That keeps the CSV
+meaning "the last state that was actually proved", which is how its rows are
+produced in the first place.
+"""
+
+from __future__ import annotations
+
+import csv
+import importlib.util
+from argparse import Namespace
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+_SCRIPT = REPO / 'skills/fetch-benchmark-project/scripts/fetch.py'
+
+_ROW = ('number,name,language,build_system,verification,native,build_protocol_a,'
+        'verify_on_project_b,verify_on_replay_b,status,notes\n'
+        '009,NASTRAN-95,fortran,make,golden,yes,yes,yes,yes,PASS,established\n')
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location('fetch_readmit', _SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _benchmark(tmp_path: Path):
+    """A benchmark folder whose name carries an admission number."""
+    dest = tmp_path / '009-thing'
+    src = dest / 'thing'
+    src.mkdir(parents=True)
+    (src / 'Makefile').write_text('all:\n\t@true\n')
+    csv_path = tmp_path / 'benchmark.csv'
+    csv_path.write_text(_ROW)
+    return dest, csv_path
+
+
+def test_a_failed_readmit_leaves_the_row(tmp_path: Path):
+    fetch = _load()
+    dest, csv_path = _benchmark(tmp_path)
+    fetch.BENCH_CSV = csv_path
+    fetch.native = lambda src, args: (False, 'the build failed\n', [])
+
+    rc = fetch.main([str(dest), '--readmit', '--configure', '',
+                     '--build', 'false', '--test', 'false'])
+
+    assert rc == 1
+    row = next(csv.DictReader(csv_path.open()))
+    assert row['status'] == 'PASS', 'a failed re-prove clobbered the row'
+    assert row['language'] == 'fortran', 'the row lost its identifying columns'
+    assert row['notes'] == 'established'
+
+
+def test_a_failed_first_admission_is_still_recorded(tmp_path: Path):
+    """The rule is about RE-proving.  A project that was never legal has no
+    established state to protect, and its failure IS the corpus's finding."""
+    fetch = _load()
+    bench = tmp_path / 'benchmark'
+    bench.mkdir()
+    csv_path = tmp_path / 'benchmark.csv'
+    fetch.BENCH = bench
+    fetch.BENCH_CSV = csv_path
+    fetch.fetch = lambda url, dest: dest.mkdir(parents=True)
+    fetch.native = lambda src, args: (False, 'the build failed\n', [])
+
+    rc = fetch.main(['https://example.invalid/proj', '--name', 'proj'])
+
+    assert rc == 1
+    row = next(csv.DictReader(csv_path.open()))
+    assert row['status'] == 'REFUSED'
+    assert row['number'] == '001'

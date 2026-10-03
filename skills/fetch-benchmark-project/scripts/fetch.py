@@ -407,12 +407,18 @@ def main(argv=None) -> int:
             shutil.rmtree(bd, ignore_errors=True)
         ok, log, remedies = native(src, args)
         if not ok:
-            print('REFUSED: the project does not build and verify natively.\n'
-                  + log, file=sys.stderr)
-            record_row(number, dest.name.split('-', 1)[-1], native='no',
-                       build_protocol_a='no', verify_on_project_b='no',
-                       verify_on_replay_b='no', status='REFUSED',
-                       notes='does not build/verify natively')
+            # NOT recorded.  A re-prove's failure is "could not re-prove", not
+            # "refused": the row already holds a state that was ESTABLISHED,
+            # and overwriting it destroys that fact.  Measured: an operator's
+            # malformed invocation (the CMake defaults against a make project)
+            # turned an established PASS into REFUSED, and nothing in the CSV
+            # said the run had been misconfigured rather than the project
+            # having regressed.
+            print('NOT RE-PROVED: the project does not build and verify with '
+                  'the native commands given.\n' + log, file=sys.stderr)
+            print(f'  the row for #{number:03d} is UNCHANGED — fix the '
+                  f'--configure/--build/--test arguments and re-run.',
+                  file=sys.stderr)
             return 1
         print('  native build + verify: OK')
         return prove_legal(dest, src, src / args.tree_subdir, number,
