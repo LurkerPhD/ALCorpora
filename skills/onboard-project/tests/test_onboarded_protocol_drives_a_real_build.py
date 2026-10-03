@@ -27,6 +27,7 @@ observation about the compile line, not about the text of a file.
 
 from __future__ import annotations
 
+import os
 import shlex
 from pathlib import Path
 
@@ -121,13 +122,14 @@ def test_the_compiled_include_dirs_are_real_directories(replay):
     ignores, leaving the build looking successful.
     """
     fresh, build, _text, _r = replay
-    obj = next(p for p in build.rglob('*.o') if 'main' in p.name)
+    obj = next(p for p in fresh.rglob('*.o') if 'main' in p.name)
     cmd = _compile_command(build, obj)
-    # Split the way the COMPILER splits, not the way Python does: a joined
-    # flag list reaches it as one quoted argument, and a plain `str.split`
-    # reads that argument as starting with a quote rather than with `-I`,
-    # so the bad flag is filtered out and the check cannot fail.
-    actual = [a[2:] for a in shlex.split(cmd) if a.startswith('-I')]
+    # The command is replayed VERBATIM, wrapped in `sh -c "..."`, so the
+    # compile line is the inner payload: split once for the wrapper, once for
+    # the compiler.
+    argv = shlex.split(cmd)
+    payload = argv[argv.index('-c') + 1] if '-c' in argv else cmd
+    actual = [a[2:] for a in shlex.split(payload) if a.startswith('-I')]
     assert actual, f'no include path reached the compiler: {cmd}'
     for d in actual:
         assert Path(d).is_dir(), (
@@ -135,31 +137,30 @@ def test_the_compiled_include_dirs_are_real_directories(replay):
             f'list joined into one option')
 
 
-def test_the_capture_builds_preprocess_flag_is_not_re_emitted(replay):
-    """``-fpreprocessed`` is a fact about the CAPTURE build's intermediate
-    file, not about the unit, so the generator must not recover it into the
-    unit's options.
+def test_a_two_step_unit_is_replayed_in_two_steps(replay):
+    """A scanned source is compiled in two edges; the replay does both.
 
-    Asserted on the generated file rather than on the replayed compile line,
-    because CMake legitimately puts its own ``-fpreprocessed`` there: a flat
-    CMake build preprocesses a Fortran source itself and compiles the
-    intermediate it made.  That one is about THIS build's intermediate; the
-    one being tested is a claim replayed from another build's.
+    CMake compiles a scanned Fortran source in TWO steps, and the compile
+    edge consumes a `<src>-pp.<ext>` INTERMEDIATE the preprocess edge made —
+    carrying `-fpreprocessed`, which is true of that intermediate.  A replay
+    that emits only the compile command names a file nothing created; this
+    asserts the intermediate is PRODUCED, by the command that makes it.
     """
     _fresh, _build, text, _r = replay
-    assert '-fpreprocessed' not in text, (
-        'the capture build\'s preprocess-step flag was re-emitted as a '
-        'property of the unit')
+    assert '-fpreprocessed' in text, (
+        'the two-step unit was collapsed to one step, so the compile command '
+        'consumes an intermediate nothing produces')
+    pp = [ln for ln in text.splitlines() if '-pp.f90' in ln and 'OUTPUT' in ln]
+    assert pp, 'no rule produces the preprocess intermediate'
 
 
 def test_the_replay_runs_and_agrees_with_the_corpus(replay):
     """The end of the closure: a program built from the protocol alone."""
     fresh, build, _text, _r = replay
-    # bin/ is where the flat build puts its artifacts, by its own choice:
-    # the protocol records where the PROJECT's build put them, and a
-    # replay is under no obligation to reproduce another build system's
-    # layout.
-    exe = fresh / 'bin' / 'demo'
+    # The product lands where its recorded link command writes it, re-rooted
+    # into THIS tree — the build is a verbatim replay, so nothing about where
+    # an artifact goes is re-derived.
+    exe = next(fresh.rglob('demo'))
     got = subprocess.run([str(exe)], capture_output=True, text=True)
     assert got.returncode == 0, got.stderr
     assert got.stdout.strip() == '84', (
@@ -168,7 +169,7 @@ def test_the_replay_runs_and_agrees_with_the_corpus(replay):
 
 def _compile_command(build: Path, obj: Path) -> str:
     """What the build system says it ran to make *obj*."""
-    rel = obj.relative_to(build).as_posix()
+    rel = str(obj)   # the custom command's OUTPUT is an absolute path
     out = subprocess.run(['ninja', '-C', str(build), '-t', 'commands', rel],
                          capture_output=True, text=True, check=True).stdout
     return out.strip().splitlines()[-1]

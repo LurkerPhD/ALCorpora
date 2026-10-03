@@ -96,7 +96,13 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
         lines.append('project(replay LANGUAGES C CXX)')
     else:
         lines.append('project(replay LANGUAGES C CXX Fortran)')
-    lines.append('set(CMAKE_POSITION_INDEPENDENT_CODE ON)')
+    # NO global CMAKE_POSITION_INDEPENDENT_CODE.  Forcing PIC on every unit
+    # adds a flag the protocol's own commands do not carry, and it is not
+    # cosmetic: measured on a project that compiles with
+    # `-fvisibility=hidden`, the added PIC made the linker LOCALISE `main`
+    # (`T` -> `t`) in every test executable, so 19 products "differed" while
+    # their code was identical.  CMake already applies PIC where it belongs —
+    # a SHARED library — so a replay that adds nothing matches the build.
     if has_fortran:
         # The MODULE DIRECTORY is the build system's to manage, and it has to
         # be, because a `.mod` is a compile-time dependency and nothing in a
@@ -160,102 +166,97 @@ def _render(protocol: Protocol, selection: Selection, tree: str,
             lines.append('  VERBATIM)')
         lines.append('')
 
+    # ── the units ──
+    # Each unit is replayed by running the EXACT command the build recorded,
+    # in the directory it ran in, with `${TREE}` re-pointed at THIS tree.  The
+    # command is the authority on flags, source spelling and output path.
+    # Re-deriving a compile from the flags drifts: measured on a real project
+    # (compiled with -fvisibility=hidden), expressing "these flags" and
+    # letting CMake reassemble the command produced -rdynamic on the link
+    # lines and a LOCALISED `main` in the executables that the project's own
+    # build did not have -- 19 products "differed" while their code was
+    # identical.
+    #
+    # The ORDER among units is still ours: a custom command has no dependency
+    # of its own, so a unit DEPENDS on the object of every module it uses.
+    provider: dict[str, str] = {}
+    for stem, e in selection.entries.items():
+        for mod in e.provides:
+            provider.setdefault(mod.casefold(), stem)
     for stem in sorted(selection.entries):
         e = selection.entries[stem]
+        cwd = _expand(e.directory, tree)
+        out = _unit_output(e, tree)
+        deps = [_expand(e.file, tree)]
+        for mod in e.uses:
+            owner = provider.get(mod.casefold())
+            if owner is not None and owner != stem \
+                    and owner in selection.entries:
+                deps.append(_unit_output(selection.entries[owner], tree))
         lines.append(f'# {stem}')
-        lines.append(f'set(_src_{_ident(stem)} '
-                     f'"{_cmake_string(_expand(e.file, tree))}")')
-
-    for stem, e in sorted(selection.entries.items()):
-        flags = flags_from_command(e.command_line(), e.file)
-        if flags:
-            # Each flag expanded, then joined as a CMake LIST.  Joined with
-            # spaces inside one quoted argument they reach the compiler as a
-            # single option -- an include path becomes the argument
-            # "-I/tree/src -fpreprocessed", which names no directory, draws
-            # only a warning, and leaves a build that looks successful.
-            lines.append(
-                f'set_source_files_properties("${{_src_{_ident(stem)}}}" '
-                f'PROPERTIES COMPILE_OPTIONS '
-                f'"{_cmake_list(_expand(f, tree) for f in flags)}")')
+        # A unit the build compiles in TWO steps (a scanned source: preprocess
+        # then compile) is replayed in two: the preprocess command makes the
+        # intermediate, and the compile command consumes it.  Replaying only
+        # the compile command names an intermediate nothing created, and
+        # replaying it against the SOURCE would drop the defines that live on
+        # the preprocess edge alone.
+        if e.preprocess:
+            pp = _output_operand(e.preprocess, cwd, tree) or out
+            lines.append(f'add_custom_command(OUTPUT "{_cmake_string(pp)}"')
+            lines.append('  WORKING_DIRECTORY '
+                         f'"{_cmake_string(cwd)}"')
+            lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
+                         f'"{_cmake_string(str(Path(pp).parent))}"')
+            lines.append(f'  COMMAND sh -c '
+                         f'"{_shell_arg(_expand(e.preprocess, tree))}"')
+            lines.append(f'  DEPENDS "{_cmake_string(_expand(e.file, tree))}"')
+            lines.append('  VERBATIM)')
+            deps = [pp] + deps
+        lines.append(f'add_custom_command(OUTPUT "{_cmake_string(out)}"')
+        lines.append('  WORKING_DIRECTORY '
+                     f'"{_cmake_string(cwd)}"')
+        lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
+                     f'"{_cmake_string(str(Path(out).parent))}"')
+        lines.append(f'  COMMAND sh -c '
+                     f'"{_shell_arg(_expand(e.command_line(), tree))}"')
+        for dep in dict.fromkeys(deps):
+            lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
+        lines.append('  VERBATIM)')
     lines.append('')
 
     # ── the products ──
-    # Members are stems, so this is the same definition in every state; the
-    # objects it resolves to are what change.
-    #
-    # Where they LAND is this generator's decision, not the project's.  The
-    # protocol records where the project's own build put its artifacts, and
-    # that is a fact about a build system this one does not use — MYSTRAN's
-    # executable is in `src_overlay/Binaries/`, a Makefile project's is in
-    # the directory it was linked in.  Reproducing those shapes would spread
-    # one generator's output across every convention its inputs happen to
-    # have, and leave whoever consumes the build with no fixed place to
-    # look.  One directory, named once.
-    bin_dir = f'{tree}/bin'.replace('\\', '/')
-    orphans = _unlinked_units(protocol, selection)
-    # Every module USED anywhere in this build.  A provider whose module is
-    # on this list has a consumer to be ordered against; one that is not has
-    # none, and only the first target needs to compile it.
-    ever_used = {m.casefold() for e in selection.entries.values()
-                 for m in e.uses}
+    # The EXACT link/archive command the build recorded, in the directory it
+    # ran in.  Nothing about the link line is re-derived (see the units'
+    # note); a product DEPENDS on its members' objects and on the products of
+    # the libraries it links.
+    by_output = {_expand(p.output, tree): p for p in protocol.products}
     for i, prod in enumerate(protocol.products):
-        out = _cmake_string(expand_tree(prod.output, tree))
-        if prod.kind == 'archive':
-            lines.append(f'add_library(_prod_{i} STATIC)')
-            for stem in prod.members:
-                if stem not in selection.entries:
-                    continue
-                lines.append(
-                    f'target_sources(_prod_{i} PRIVATE '
-                    f'"${{_src_{_ident(stem)}}}")')
-            for stem in _orphans_needed_by(orphans, prod.members,
-                                           selection, ever_used,
-                                           first=(i == _first_product(
-                                               protocol))):
-                lines.append(
-                    f'target_sources(_prod_{i} PRIVATE '
-                    f'"${{_src_{_ident(stem)}}}")')
-            lines.append(f'set_target_properties(_prod_{i} PROPERTIES '
-                         f'OUTPUT_NAME "{Path(out).stem[3:] if Path(out).stem.startswith("lib") else Path(out).stem}" '
-                         f'ARCHIVE_OUTPUT_DIRECTORY "{bin_dir}")')
-        elif prod.kind == 'exe':
-            lines.append(f'add_executable(_prod_{i})')
-            for stem in prod.objects:
-                if stem not in selection.entries:
-                    continue
-                lines.append(
-                    f'target_sources(_prod_{i} PRIVATE '
-                    f'"${{_src_{_ident(stem)}}}")')
-            for stem in _orphans_needed_by(orphans, prod.objects,
-                                           selection, ever_used,
-                                           first=(i == _first_product(
-                                               protocol))):
-                lines.append(
-                    f'target_sources(_prod_{i} PRIVATE '
-                    f'"${{_src_{_ident(stem)}}}")')
-            for lib in prod.libs:
-                # A library this generator ALSO builds is linked by NAME, so
-                # the link line follows the archive's own chosen location;
-                # spelling its path here would pin it to where the PROJECT's
-                # build put it, and the replay would look for an archive in
-                # a directory it never writes to.
-                lines.append(
-                    f'target_link_libraries(_prod_{i} PRIVATE '
-                    f'"{_lib_ref(lib, protocol, selection, tree)}")')
-            for link in extra_links:
-                # The CALLER's extra, LAST on the line.  A project that ships
-                # its own library and also links a foreign one wants its own
-                # resolved first (the linker pulls only what an undefined
-                # symbol asks for), so anything the caller adds goes after.
-                lines.append(
-                    f'target_link_libraries(_prod_{i} PRIVATE '
-                    f'"{_cmake_string(link)}")')
-            lines.append(f'set_target_properties(_prod_{i} PROPERTIES '
-                         f'OUTPUT_NAME "{Path(out).name}" '
-                         f'RUNTIME_OUTPUT_DIRECTORY "{bin_dir}")')
-        else:
-            raise ProtocolError(f'products[{i}]: unknown kind {prod.kind!r}')
+        out = _expand(prod.output, tree)
+        cwd = _expand(prod.directory, tree) if prod.directory else tree
+        deps: list[str] = []
+        for stem in (*prod.members, *prod.objects):
+            if stem in selection.entries:
+                deps.append(_unit_output(selection.entries[stem], tree))
+        for lib in prod.libs:
+            ref = _expand(lib, tree)
+            if ref in by_output:
+                deps.append(_expand(by_output[ref].output, tree))
+        lines.append(f'add_custom_command(OUTPUT "{_cmake_string(out)}"')
+        lines.append('  WORKING_DIRECTORY '
+                     f'"{_cmake_string(cwd)}"')
+        lines.append('  COMMAND "${CMAKE_COMMAND}" -E make_directory '
+                     f'"{_cmake_string(str(Path(out).parent))}"')
+        if prod.command:
+            lines.append(f'  COMMAND sh -c '
+                         f'"{_shell_arg(_expand(prod.command, tree))}"')
+        for dep in dict.fromkeys(deps):
+            lines.append(f'  DEPENDS "{_cmake_string(dep)}"')
+        lines.append('  VERBATIM)')
+    lines.append('')
+    if protocol.products:
+        outputs = ' '.join(f'"{_cmake_string(_expand(p.output, tree))}"'
+                           for p in protocol.products)
+        lines.append(f'add_custom_target(_replay ALL DEPENDS {outputs})')
     lines.append('')
 
     # ── the caller's extra include directories ──
@@ -542,6 +543,41 @@ def _has_fortran(selection: Selection) -> bool:
 
 def _ident(stem: str) -> str:
     return ''.join(c if c.isalnum() else '_' for c in stem)
+
+
+def _output_operand(command: str, cwd: str, tree: str) -> str | None:
+    """The path a command's ``-o`` names, absolute, or ``None``.
+
+    Used to locate the intermediate a preprocess step writes, so the compile
+    step that consumes it can depend on it.  Relative to *cwd*, the directory
+    the command runs in — the same convention a compile database uses.
+    """
+    try:
+        argv = shlex.split(_expand(command, tree))
+    except ValueError:
+        return None
+    if '-o' not in argv:
+        return None
+    i = argv.index('-o')
+    if i + 1 >= len(argv):
+        return None
+    p = Path(argv[i + 1])
+    return str(p if p.is_absolute() else Path(cwd) / p)
+
+
+def _unit_output(e: CompileEntry, tree: str) -> str:
+    """The object the unit's own command writes, as an absolute path.
+
+    Read off the entry, not invented: the command's ``-o`` operand is
+    relative to the unit's ``directory`` (the same convention
+    compile_commands.json uses), so the path is ``directory/output``.  The
+    command is replayed verbatim in that directory, so this is exactly where
+    the object lands — no rewriting, and the link line's own relative
+    reference to it resolves the same way.
+    """
+    cwd = Path(_expand(e.directory, tree))
+    out = Path(_expand(e.output, tree))
+    return str(out if out.is_absolute() else cwd / out)
 
 
 def _expand(text: str, tree: str) -> str:

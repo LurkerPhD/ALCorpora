@@ -200,6 +200,13 @@ class Product:
 
     output: str
     kind: str                      # 'archive' | 'exe'
+    #: Whether an ``archive`` product is a SHARED library (a ``.so``/``.dylib``)
+    #: rather than a static one.  Load-bearing for a replay: linking a shared
+    #: library leaves its symbols UNDEFINED in the consumer, while linking a
+    #: static one pulls them INTO it — so rebuilding a shared library as static
+    #: changes every consumer's defined-symbol set.  Measured on a project
+    #: that builds its library shared by default.
+    shared: bool = False
     #: Archive members, as STEMS — so the link line follows the state
     #: instead of pinning the form that happened to be captured.
     members: tuple[str, ...] = ()
@@ -208,15 +215,31 @@ class Product:
     libs: tuple[str, ...] = ()
     driver: str = ''
     flags: tuple[str, ...] = ()
+    #: The EXACT command that produces this product, as the build ran it.  A
+    #: replay runs this verbatim rather than re-deriving a link line: the
+    #: recorded command is the authority on flags, library order and search
+    #: paths, the same way a unit's ``command`` is for its compile.  Empty
+    #: when the build system did not expose it.
+    command: str = ''
+    #: The directory :attr:`command` ran in — the link line's relative
+    #: operands are relative to IT (a Makefile links in the directory it runs
+    #: in).  Empty means the tree root.
+    directory: str = ''
 
     def to_json(self) -> dict:
         out: dict = {'output': self.output, 'kind': self.kind}
+        if self.shared:
+            out['shared'] = True
         for k in ('members', 'objects', 'libs', 'flags'):
             v = getattr(self, k)
             if v:
                 out[k] = list(v)
         if self.driver:
             out['driver'] = self.driver
+        if self.command:
+            out['command'] = self.command
+        if self.directory:
+            out['directory'] = self.directory
         return out
 
     @classmethod
@@ -226,11 +249,14 @@ class Product:
             raise ProtocolError(
                 f'product missing {", ".join(missing)}: {d!r}')
         return cls(output=d['output'], kind=d['kind'],
+                   shared=bool(d.get('shared')),
                    members=tuple(d.get('members') or ()),
                    objects=tuple(d.get('objects') or ()),
                    libs=tuple(d.get('libs') or ()),
                    driver=d.get('driver') or '',
-                   flags=tuple(d.get('flags') or ()))
+                   flags=tuple(d.get('flags') or ()),
+                   command=d.get('command') or '',
+                   directory=d.get('directory') or '')
 
 
 #: The keys the `build` section may carry.  All are OPTIONAL: a project

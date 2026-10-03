@@ -119,8 +119,9 @@ def test_the_replayed_program_runs_and_agrees(replay):
     """
     _root, fresh, _proto, report = replay
     assert report.ok, report.summary()
-    exe = fresh / 'bin' / 'demo'
-    assert exe.is_file(), f'no executable at {exe}'
+    # The product lands where its recorded link command writes it, re-rooted
+    # into this tree — the build is a verbatim replay.
+    exe = next(fresh.rglob('demo'))
     got = subprocess.run([str(exe)], capture_output=True, text=True)
     assert got.returncode == 0, got.stderr
     assert got.stdout.strip() == '42', got.stdout

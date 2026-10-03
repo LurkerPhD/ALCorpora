@@ -333,6 +333,25 @@ class Toolchain:
         text = rel.as_posix()
         return TREE if text == '.' else f'{TREE}/{text}'
 
+    def dir_spelling(self, path: str | Path) -> str:
+        """A DIRECTORY's spelling: under the tree it travels, else absolute.
+
+        A command's working directory follows the tree, which is a different
+        question from :meth:`in_tree_space`'s "did the build produce this?" —
+        a build directory is not produced by anything, but a replay must run
+        its commands in ITS OWN copy of it, not in the tree the protocol was
+        captured from.  So a directory under the root is spelled ``${TREE}``
+        regardless of whether anything writes it.
+        """
+        a = self.to_abs(path)
+        try:
+            rel = a.relative_to(self.root)
+        except ValueError:
+            return escape_tree(str(a))
+        text = rel.as_posix()
+        # Escape the RELATIVE part only: `${TREE}` must stay a placeholder.
+        return TREE if text == '.' else f'{TREE}/{escape_tree(text)}'
+
     def stem_of(self, source: Path) -> str:
         """*source*'s extension-independent identity below ITS OWN tree.
 
@@ -699,7 +718,7 @@ def _units(tc: Toolchain) -> tuple[list[CompileEntry], dict[str, str]]:
         cmd = _absolutise_paths(e.command, e.directory)
         pp = _absolutise_paths(e.preprocess, e.directory) if e.preprocess else ''
         out.append(CompileEntry(
-            directory=tc.in_tree_space(e.directory),
+            directory=tc.dir_spelling(e.directory),
             command=tc.in_tree_space_cmd(cmd),
             file=tc.in_tree_space(src),
             output=_rel(e.obj, tc.build),
@@ -832,20 +851,25 @@ def _module_edges(src: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 # ── the link half ─────────────────────────────────────────────
 
-def _link_targets(tc: Toolchain) -> list[tuple[str, str]]:
-    """``(target, kind)`` for every link edge, deterministically ordered.
+def _link_targets(tc: Toolchain) -> list[tuple[str, str, bool]]:
+    """``(target, kind, shared)`` for every link edge, deterministically ordered.
 
-    The KIND comes from the rule, not from inspecting the command: a build
-    system already knows whether it is making an executable or an archive,
-    and a command sniffing for ``ar`` in ``argv[0]`` reads that off a
-    convention rather than off the declaration.
+    The KIND and the SHAREDNESS come from the rule, not from inspecting the
+    command: a build system already knows whether it is making an executable,
+    a static library or a shared one, and a command sniffing for ``ar`` in
+    ``argv[0]`` reads that off a convention rather than off the declaration.
+    Sharedness matters because it changes what a CONSUMER defines — see
+    :attr:`private_protocol.Product.shared`.
     """
-    out: list[tuple[str, str]] = []
+    out: list[tuple[str, str, bool]] = []
     for path, rule in tc.targets():
         if any(k in rule for k in _LINK_EXE):
-            out.append((path, 'exe'))
+            out.append((path, 'exe', False))
+        elif ('SHARED_LIBRARY_LINKER' in rule
+              or 'MODULE_LIBRARY_LINKER' in rule):
+            out.append((path, 'archive', True))
         elif any(k in rule for k in _LINK_LIB):
-            out.append((path, 'archive'))
+            out.append((path, 'archive', False))
     return sorted(set(out))
 
 
@@ -862,9 +886,14 @@ def _products(tc: Toolchain, by_object: dict[str, str]) -> list[Product]:
     an input edge at all.
     """
     targets = _link_targets(tc)
-    inputs = tc.inputs_many([t for t, _ in targets])
+    inputs = tc.inputs_many([t for t, _, _ in targets])
+    # The EXACT link command, per target, so a replay runs it verbatim rather
+    # than re-deriving a link line (see Product.command).  Asked of the same
+    # subtool and the same way the generated sources' commands are.
+    commands = tc.commands_for([t for t, _, _ in targets])
     out: list[Product] = []
-    for (target, kind), (explicit, order) in zip(targets, inputs):
+    for (target, kind, shared), (explicit, order), command in zip(
+            targets, inputs, commands):
         objects: list[str] = []
         libs: list[str] = []
         for tok in (*explicit, *order):
@@ -884,12 +913,18 @@ def _products(tc: Toolchain, by_object: dict[str, str]) -> list[Product]:
         out.append(Product(
             output=tc.in_tree_space(target),
             kind=kind,
+            shared=shared,
             # An archive's members are what goes INTO it; an executable's own
             # units are separate from the libraries it links, and the flat
             # generator reads them as different fields.
             members=tuple(objects) if kind == 'archive' else (),
             objects=tuple(objects) if kind == 'exe' else (),
             libs=tuple(libs) if kind == 'exe' else (),
+            # Re-rooted like every other recorded command, so a replay writes
+            # its products into ITS tree, not the capture tree.
+            command=tc.in_tree_space_cmd(
+                _absolutise_paths(command, str(tc.build))) if command else '',
+            directory=tc.dir_spelling(tc.build),
         ))
     return out
 
