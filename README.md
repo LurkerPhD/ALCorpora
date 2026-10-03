@@ -262,6 +262,23 @@ The generator still decides two things the recorded commands do not: the
 `${TREE}` placeholder is expanded to the replay's tree, and a unit DEPENDS on
 the object of every module it uses, so the compile order is CMake's.
 
+
+## The benchmark
+
+This tool is developed the way it is meant to be used: **pull a project that
+verifies itself, run the whole flow on it, and when something breaks, fix the
+tool.** `benchmark/` (gitignored) holds those projects; `benchmark.csv`
+records each one's state.
+
+A project is **legal** when it builds and verifies with its OWN toolchain,
+its build protocol replays it (§A), and its verification protocol runs green
+on the project AND on the replay (§B). The `fetch-benchmark-project` skill
+admits one, numbers it by the smallest free number, and writes its row.
+
+Current state is `benchmark/benchmark.csv`; the projects are read in
+admission order, and a project that fails is the next gap to close — not a
+project to drop.
+
 ## Running it
 
 ```bash
