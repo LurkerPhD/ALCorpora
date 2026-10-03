@@ -1,24 +1,19 @@
-"""Run a corpus's acceptance plan, from the command line.
+"""Run a project's verification protocol, from the command line.
 
-The three per-corpus benchmark programs this replaces each had their own CLI
-(``-x`` here, ``-b`` there, ``-d`` again) and their own summary.  There is one
-mechanism now, so there is one command, and it takes the thing that describes
-the corpus: its plan.
+A project is described by its verification protocol, so there is ONE command
+and it takes the build tree holding that plan:
 
     # the whole plan
-    python3 -m protocolize.edd.bench_cli build_mystran
+    python3 -m protocolize.verify.cli <build tree>
 
     # one case, and whatever it restarts from
-    python3 -m protocolize.edd.bench_cli build_mystran --case bar_01
-    python3 -m protocolize.edd.bench_cli build_mystran --case D01-01-1C
+    python3 -m protocolize.verify.cli <build tree> --case <id>
 
     # what the plan would discover and run, without running it
-    python3 -m protocolize.edd.bench_cli build_mystran --list
+    python3 -m protocolize.verify.cli <build tree> --list
 
 Exit status is the plan's verdict: 0 when the plan's own summary is met, 1
-otherwise.  That is the contract the callers of the old scripts relied on —
-``isolate_stem_check.py`` and ``build_nastran_manual.sh`` both branch on it —
-so it is what this preserves.
+otherwise, 2 when something crashed.  A caller can branch on it.
 """
 
 from __future__ import annotations
@@ -27,7 +22,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import bench, bench_suite
+from . import reference, suite
 
 #: Where a corpus's plan lives, under its build directory.
 PLAN_NAME = 'verification_plan.json'
@@ -80,7 +75,7 @@ def _plan_and_env(build_dir: Path, origin: Path | None,
     cfg = {'target_dir': str(build_dir), 'tree_root': str(build_dir),
            'protocol': str(build_dir / 'protocol_fortran.json'),
            '_config_dir': build_dir}
-    env = bench.plan_env(plan, build_dir, cfg,
+    env = reference.plan_env(plan, build_dir, cfg,
                          origin_dir=origin or build_dir / 'origin_release',
                          exe_path=_target(plan, build_dir, exe))
     return plan, env
@@ -124,9 +119,9 @@ def _resolve_selectors(selectors: list[str], cases: list) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
-        description='Run a corpus\'s acceptance plan (verification_plan.json)')
+        description='Run a verification protocol (verification_plan.json)')
     p.add_argument('build_dir',
-                   help='the corpus build tree holding verification_plan.json')
+                   help='the build tree holding verification_plan.json')
     p.add_argument('--case', '-t', action='append', default=[],
                    metavar='ID',
                    help='run only this case (repeatable); its restart '
@@ -152,19 +147,19 @@ def main(argv: list[str] | None = None) -> int:
     # `-j` is a DELIBERATE override for an experiment.  Without it the width
     # stays whatever the plan declares, because a suite's width is part of its
     # measurement — re-deriving it from the core count here would discard the
-    # declared value a second time, after `bench.plan_env` had already
+    # declared value a second time, after `reference.plan_env` had already
     # honoured it.
     if args.jobs:
         env.jobs = args.jobs
 
-    cases = bench_suite.discover(plan, env)
+    cases = suite.discover(plan, env)
     if args.list:
         for case in cases:
             print(case.id)
         return 0
 
     only = _resolve_selectors(args.case, cases) if args.case else None
-    result = bench_suite.run(plan, env, only=only)
+    result = suite.run(plan, env, only=only)
     print(result.output, end='')
     if not result.ok and result.counts.crash:
         # A crash is not a difference: say so in the status too, so a caller

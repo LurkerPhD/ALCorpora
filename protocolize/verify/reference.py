@@ -12,7 +12,7 @@ import time
 
 from pathlib import Path
 
-from . import bench_suite
+from . import suite
 from . import counts as count
 from . import log
 from .log import Action
@@ -54,7 +54,7 @@ def load_plan(cfg: dict):
 
 def plan_env(plan, build_dir: Path, cfg: dict,
              origin_dir: Path | None = None,
-             exe_path: Path | None = None) -> 'bench_suite.Env':
+             exe_path: Path | None = None) -> 'suite.Env':
     """The run-time roots a plan is executed against.
 
     ``target`` is the plan's own answer, not the harness's: a product corpus's
@@ -78,7 +78,7 @@ def plan_env(plan, build_dir: Path, cfg: dict,
         # place.  Assuming the tree root found no registrations at all and
         # reported the suite clean with zero checks behind it.
         target = _tree_target(build_dir)
-    return bench_suite.Env(
+    return suite.Env(
         target=target, tree=build_dir,
         origin=Path(origin_dir) if origin_dir else Path(cfg['target_dir']),
         results=build_dir / 'benchmark_results',
@@ -223,7 +223,7 @@ def _run_planned(plan, cfg: dict, exe_path: Path,
                  build_dir: Path | None) -> tuple[str, bool]:
     """Run the suite the plan describes.  Returns ``(output, ok)``."""
     build = Path(build_dir) if build_dir else Path(exe_path).parent.parent
-    result = bench_suite.run(
+    result = suite.run(
         plan, plan_env(plan, build, cfg, origin_dir, exe_path))
     return result.output, result.ok
 
@@ -236,7 +236,7 @@ def origin_ready(origin_dir: Path, cfg: dict | None = None) -> bool:
     # COMPLETELY, not approximately: the old check was "any .out under here",
     # so a killed reference run leaving one file of 132 reported ready and
     # the cases without a golden were then scored as runtime-only passes.
-    return bench_suite.origin_ready(
+    return suite.origin_ready(
         plan, plan_env(plan, Path(origin_dir), cfg or {}, Path(origin_dir)))
 
 
@@ -258,7 +258,7 @@ def save_origin(results_dir: Path, origin_dir: Path, cfg: dict | None = None,
     build = Path((cfg or {}).get('target_dir', Path(origin_dir).parent))
     env = plan_env(plan, build, cfg or {}, Path(origin_dir))
     env.results = Path(results_dir)
-    return bench_suite.ensure_reference(plan, env)
+    return suite.ensure_reference(plan, env)
 
 
 def _ensure_origin_from_plan(ctx, build_dir: Path, exe_path: Path,
@@ -272,7 +272,7 @@ def _ensure_origin_from_plan(ctx, build_dir: Path, exe_path: Path,
     plan = load_plan(ctx.cfg or {})
     env = plan_env(plan, build_dir, ctx.cfg or {}, origin_dir, exe_path)
     _t0 = time.monotonic()
-    n = bench_suite.ensure_reference(plan, env)
+    n = suite.ensure_reference(plan, env)
     log.action(f"benchmark OK — {time.monotonic() - _t0:.3f}s (wall)",
                action=Action.OK)
     if n == 0:
@@ -366,7 +366,7 @@ def ensure_origin(ctx, mode: str = 'debug', timeout: int = 1800) -> bool:
     # Run the FULL suite on the original.  No golden is compared; -k keeps
     # going so every test's .out is captured.
     #
-    # WITH A PLAN the capture IS the run: `bench_suite.ensure_reference` runs
+    # WITH A PLAN the capture IS the run: `suite.ensure_reference` runs
     # the plan against the reference and keeps what the plan calls golden, so
     # calling `run_benchmark_suite` here as well ran the whole suite TWICE —
     # once for a verdict nothing consumes, once for the goldens.

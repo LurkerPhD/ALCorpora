@@ -21,8 +21,8 @@ reference and the candidate therefore traverse the same code path, and "a
 failed reference run records nothing" is true by construction rather than
 remembered by each corpus.
 
-WHAT IT PRINTS is the interface the harness reads (``edd.counts.BenchCounts``
-and ``edd.decision.classify`` both parse this text), so it is one
+WHAT IT PRINTS is the interface the harness reads (``verify.counts.BenchCounts``
+and ``the runner's verdict`` both parse this text), so it is one
 implementation with one spelling:
 
     CRASHED <id> (t s) / TIMEOUT <id> (t s > budget s)

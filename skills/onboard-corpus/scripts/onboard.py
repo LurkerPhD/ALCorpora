@@ -12,7 +12,7 @@ It produces two artifacts, each self-verified before it is written:
 * the build protocol (``extract_protocol``) -- proven by rebuilding from it;
 * the acceptance plan (``capture_verification``) -- proven by
   ``problems()`` (refuses a vacuous plan) and by running the plan on the
-  reference build (``bench_cli``).
+  reference build (``cli``).
 
 Two things it refuses to do:
 
@@ -268,7 +268,7 @@ def _capture_and_prove_plan(proto, build: Path, root: Path, args) -> int:
     * ``VerificationPlan.problems()`` REFUSES a plan that could produce a
       verdict with nothing behind it — no minimum, a process run that names
       no input, a golden of ``none`` with no stamp.
-    * the plan is RUN against the reference (``bench_cli``'s exit status is
+    * the plan is RUN against the reference (``cli``'s exit status is
       the verdict).  A plan that does not pass on the corpus's own build does
       not judge the corpus.  When the reference is not runnable the run is
       reported as NOT DONE, never as passed.
@@ -305,25 +305,25 @@ def _capture_and_prove_plan(proto, build: Path, root: Path, args) -> int:
 def _run_plan_against_reference(plan_path: Path) -> int:
     """Run the freshly captured plan on the reference build.
 
-    ``bench_cli``'s exit status is the plan's verdict: 0 when the plan's own
+    ``cli``'s exit status is the plan's verdict: 0 when the plan's own
     summary is met.  A non-zero verdict REFUSES the plan — it does not judge
     the corpus it was captured from.  A reference that cannot be run at all
     (not built or not benchmarked) is reported as NOT verified, which is not
     a pass.
 
     It is pointed at the directory the plan was WRITTEN to, not the raw
-    build tree: ``bench_cli`` loads ``<dir>/verification_plan.json`` and
+    build tree: ``cli`` loads ``<dir>/verification_plan.json`` and
     discovers the tree to run under it, so passing the build tree's own
     subdirectory (CMake's ``build/``) made it look for a plan one level
     below where onboarding wrote it — the plan was correct and the verdict
     was ``no verification_plan.json``.
     """
-    from protocolize.edd import bench_cli
+    from protocolize.verify import cli
 
     tree = plan_path.parent
     print(f'self-verifying the plan on the reference ({tree}) ...')
     try:
-        rc = bench_cli.main([str(tree)])
+        rc = cli.main([str(tree)])
     except Exception as exc:  # noqa: BLE001 — report, never crash onboarding
         print(f'  the plan could NOT run on the reference: {exc}',
               file=sys.stderr)

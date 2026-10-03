@@ -31,12 +31,12 @@ protocolize/
   onboard/extract.py    read a protocol OUT of a build (ninja/CMake, make)
   onboard/selfcheck.py  rebuild from the protocol and compare (the §A work)
   onboard/make_extract.py
-  edd/bench_suite.py    run a verification plan; compute the verdict
-  edd/bench_cli.py      CLI: run a plan against a build
-  edd/bench.py          origin capture / reference
-  edd/compare.py        text/field comparison
-  edd/counts.py         BenchCounts (parsed from a runner's own output)
-  edd/log.py
+  verify/suite.py    run a verification plan; compute the verdict
+  verify/cli.py      CLI: run a plan against a build
+  verify/reference.py          origin capture / reference
+  verify/compare.py        text/field comparison
+  verify/counts.py         BenchCounts (parsed from a runner's own output)
+  verify/log.py
 skills/onboard-corpus/  the skill: SKILL.md, scripts/onboard.py, reference/*.json, tests/
 ```
 
@@ -60,6 +60,15 @@ These are **data/behaviour** couplings the import check cannot see:
    are f2c/toolchain specific. → keep the fields **optional**, empty for a general
    project; do not branch on them in generic code.
 5. `flat_cmake` writes `project(f2c_state ...)`. → a neutral project name.
+6. **`verify/cli.py` defaults encode the old harness's layout**: `origin_release`,
+   `curr/bin/<product>`, `curr/build`, and `protocol_fortran.json` as the default
+   protocol name. → make these plan-declared or arguments; nothing in the tool may
+   assume a directory called `curr` or a file called `protocol_fortran.json`.
+7. **Comment/docstring vocabulary**: many notes still say "corpus", "harness",
+   "EDD", "f2c". The tool's own words are project / build / verification. Sweep them
+   in this pass — a note that names the old harness misleads the next reader.
+   (The package was `edd/` and its modules `bench_*`; renamed to `verify/` with
+   `suite`/`cli`/`reference` — the rest of the vocabulary follows.)
 
 ## The delivery flow (the tool's job, per project)
 
@@ -69,7 +78,7 @@ These are **data/behaviour** couplings the import check cannot see:
 | 2 | **build natively once → verify natively once**. If that fails: a fix that persists → a `prepare` op; otherwise **report failure** | skill (agent) |
 | 3 | unify into **build protocol + verification protocol** (fill the templates) | `extract.py` / `onboard.py` |
 | 4 | **build-protocol self-verify**: protocol → flat build → **binary-identical** to native (§A); differ → fix the protocol, re-verify | `selfcheck.py` |
-| 5 | **verification-protocol self-verify**: the protocol-driven flat build runs the flat verification → behaves as native; every correctness-irrelevant caveat met on the way is written **into the plan** | `bench_suite` / `onboard.py` |
+| 5 | **verification-protocol self-verify**: the protocol-driven flat build runs the flat verification → behaves as native; every correctness-irrelevant caveat met on the way is written **into the plan** | `verify/suite` / `onboard.py` |
 
 Why 1–2 are the skill's and not a script's: "how to build project X" is a **research
 result that differs per project** (a hand-written shell here, CMake there). Encoding it
@@ -128,7 +137,7 @@ like the existing cmake/ninja probe.
   `caveats: [{kind, pattern, why}]`; prose in `provenance`/`comment`.
   **Shape TBD** — decide while onboarding the first real project.
 * **Self-verify**: `onboard.py` already runs the plan on the reference
-  (`bench_cli` exit code = verdict). Add: the **protocol-driven flat build** runs the
+  (`cli` exit code = verdict). Add: the **protocol-driven flat build** runs the
   same plan and reaches the same verdict.
 * Runtime resources (a `dmap/`-style data dir) → **`prepare`** (install once);
   validation **inputs** (a `Build_Test_Cases/` tree) → **`support_files`** (content).
@@ -180,5 +189,5 @@ A legal project is **self-contained**: everything the build/verification needs i
 * `protocolize/onboard/extract.py` — capture (facts elimination lands here)
 * `protocolize/private_protocol.py`, `protocolize/verification_plan.py` — schema
 * `protocolize/flat_cmake.py` — runtime_include → extra_includes
-* `protocolize/edd/{bench_suite,bench_cli,bench}.py` — run + verdict
+* `protocolize/verify/{suite,cli,reference}.py` — run + verdict
 * `skills/onboard-corpus/` — the skill (research + research-and-run; fills the templates)

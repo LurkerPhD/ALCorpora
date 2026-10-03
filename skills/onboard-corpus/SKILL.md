@@ -275,7 +275,7 @@ order of preference:
 2. **Write it, then PROVE it.**  When the project's declaration has a shape the
    extractor cannot read, fill the template in directly — and then make the
    proof: `VerificationPlan.problems()` must return `[]`, and
-   `python3 -m protocolize.edd.bench_cli <build tree>` must give the same
+   `python3 -m protocolize.verify.cli <build tree>` must give the same
    verdict the project's own benchmark gives.  A plan that merely loads is not
    a plan that judges.
 
