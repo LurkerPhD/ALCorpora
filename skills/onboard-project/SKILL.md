@@ -16,12 +16,19 @@ getting it wrong is paid later by every build that follows.
 
 ## What you are actually doing
 
-**The build is the authority on the build.** Not your reading of its source
-tree, not its documentation, not your expectations of how a CMake project
-looks. Every project has some way to tell you what it would do without doing
-it, and that answer is the ground truth:
+**The build is the authority on the build**, and the TOOL asks it — `bench.py
+extract` runs the build system's own sub-tools and reads their answer. You do
+not run them yourself, and you do not read the project's source tree,
+documentation, or manifest to decide what the commands were. A manifest is an
+internal format whose escapes, variable expansion and ordering rules belong to
+that tool; the sub-tool is the interface maintained for exactly this question.
 
-| build system | ask it |
+The table below is therefore **not a list of commands for you to run**. It is
+the knowledge to extend the tool when a project is built by something the tool
+has no backend for — the shape to look for is "print the commands, run
+nothing":
+
+| build system | the interface |
 |---|---|
 | ninja / CMake | `ninja -t compdb`, `-t commands <target>`, `-t targets all`, `-t query <target>` |
 | GNU make | `make -Bn <target>` |
@@ -30,231 +37,99 @@ it, and that answer is the ground truth:
 | bazel | `bazel aquery` |
 | autotools | it generates a Makefile: `make -Bn` |
 
-**You are not limited to this table.** A project built by something else has
-its own equivalent, and finding it is part of the job — the shape to look for
-is "print the commands, run nothing". If you genuinely cannot find one, say
-so and stop; do not infer compile commands from the sources, because a
-guessed protocol is one whose flags are almost right, which is the most
-expensive kind of wrong.
-
-**Ask the build system's own sub-tools, never parse its files.** A manifest
-is an internal format whose escapes, variable expansion and ordering rules
-belong to that tool. `ninja -t compdb` and `make -Bn` are the interfaces the
-tool maintains for exactly this question.
+A project built by something else has its own equivalent, and finding it is
+part of the job. If you genuinely cannot find one, say so and stop: **do not
+infer compile commands from the sources.** A guessed protocol is one whose
+flags are almost right, which is the most expensive kind of wrong — and the
+proof in step 2 exists to catch exactly that, so a guess will be refused
+rather than silently accepted.
 
 ## The shape of the answer
 
-`reference/protocol-template.json` is the annotated form, and a real
-protocol from a real project is the best example. In brief:
+`reference/protocol-template.json` is the annotated form: **every field carries
+a `_README`** saying what it means, what the project must declare for it, and
+what was MEASURED when it was got wrong. Read the template, not a copy of the
+template. `Protocol.problems()` is the authority on whether a protocol is
+well-formed.
 
-```
-{
-  "protocol_version": 1,
-  "compile_commands": [ {directory, command, file, output,
-                         stem, language, provides, uses, preprocess}, ... ],
-  "generated_inputs": [ {output, command, depends}, ... ],
-  "products":         [ {output, kind, stems, libs, driver}, ... ]
-}
-```
+**The file is a JSON object, and `compile_commands` is one element of it — a
+compile database is CONTAINED, not the file.** Each entry carries the standard
+cc fields plus the ones a database cannot hold, so the stored entries are
+deliberately NOT valid cc: a real loader is a strict whitelist and rejects the
+ENTIRE file over one unknown key. A valid compile database is an EXPORT
+(`Protocol.to_cc`). Pinned by a test, so the two spellings cannot drift.
 
-A compile database is ONE ELEMENT here, not the file. `compile_commands`
-holds the entries, and each entry carries the standard fields PLUS the ones
-below — so the stored entries are deliberately NOT valid cc. Measured: clangd
-and clang-check load a compile database from a strict whitelist and reject the
-ENTIRE file over one unknown key, so an entry carrying `stem` makes every
-entry beside it unreadable too. A valid compile database is an EXPORT
-(`Protocol.to_cc`, which drops everything cc does not define).
+**The rules that decide the entries — which units, which products, which are
+the project's own, how a path is spelled — are implemented, and each one's
+docstring carries its reasoning and the measurements behind it.** They live in
+`protocolize/onboard/extract.py` (`_units`, `_products`, `_generated`,
+`own_roots_for`) and `protocolize/tree_anchor.py` (the `${TREE}` spelling).
+Read them there when a project needs a rule extended, and read the refusal
+`bench.py extract` prints when one is violated — that refusal names the rule.
 
-Everything beyond the standard fields answers questions a compile database
-cannot, and each one is load-bearing:
+**Two things about the output are worth knowing before you run anything**,
+because neither is discoverable from the file alone:
 
-**`stem`** — the unit's identity with the extension removed and case kept.
-It is the protocol's key: a product names its inputs as stems, so the link
-line refers to a unit by its identity rather than by the file that happens to
-hold it.
-
-**`provides` / `uses`** — the Fortran module graph. A unit converted to C++
-emits no `.mod`, so this has to be known BEFORE anything compiles. Read it
-from the sources; no build system records it.
-
-**`preprocess`** — the preprocess step, when there is one. **CMake Fortran
-compiles a scanned source in two steps and does not give them the same
-flags: the `-D` set arrives on the preprocess edge only.** A consumer that
-re-runs only `command` silently drops every conditional block.
-
-**`products`** — what links, with **its inputs recorded as stems** (`stems`
-is ONE field: an archive's members and an executable's own units are the same
-relation, and `kind` says which reading applies). This is what
-makes a state-driven build possible at all: flipping a unit changes which
-object the link line names without the product changing.
-
-**`generated_inputs`** — sources the build MAKES. A replay that names one
-without a rule to produce it looks for a file that is not there, and fails on
-one missing file among thousands.
-
-**`own_roots`** — which of those units are the CORPUS'S OWN, as opposed to a
-library it vendored and links. A corpus is routinely fetched together with
-its third-party dependencies (MYSTRAN ships `submodules/{lapack,BLAS,superlu,
-metis,GKlib}` beside its own `Source/`), and those must be BUILT natively, not
-converted: converting them rewrites a library the corpus links into thousands
-of units of the corpus's own translation burden, and it is not academic —
-measured, LAPACK's `dp` and MYSTRAN's own `dp` collided in a name-keyed
-constant table and the corpus's `dlartg` came out single precision.
-
-Record the corpus's own roots, and leave the field EMPTY when the project
-vendors nothing (LAPACK, NASTRAN-95): empty means "no narrowing", so a corpus
-that declares nothing keeps its whole protocol.
-
-Ask the PROJECT, not the build tree — it states this itself, in one of two
-ways, and neither needs you to know the project:
-
-| ask | for |
-|---|---|
-| `git config -f <checkout>/.gitmodules --get-regexp '^submodule\..*\.path$'` | the directories the project declares it vendored |
-| `<build>/CMakeCache.txt`, its `<Name>_SOURCE_DIR` entries | the sub-projects the top-level build actually pulled in (`CMAKE_HOME_DIRECTORY` is the project itself) |
-
-The checkout is available because it is what you just built; the build tree
-is the fallback for a run that captured a tree without its checkout beside
-it. Prefer the checkout: `.gitmodules` is the project's own declaration,
-while the cache is a build system's record of it.
-
-Then close the set under generation: a unit made FROM a vendored unit is the
-vendored library's too. That is not a detail — it is the case a path test
-cannot see, and it cuts both ways. MYSTRAN's `${TREE}/Binaries/.../*_64.f`
-are made from `submodules/lapack`, so they go; LAPACK's `*_64.f` are made
-from LAPACK's OWN `BLAS/SRC`, so they stay. **Nothing about this rule
-mentions a suffix**: the `_64` units are just units, and which side they
-belong to is decided by what they were generated FROM. A unit that
-participates in the build is part of the corpus unless the project says
-otherwise.
-
-Do NOT decide this from a directory scan, from "is it in an archive", or
-from the exe/archive member sets — all three were tried on the real corpora
-and all three are wrong. `liblapack.a`'s members are LAPACK's OWN code, so
-"in an archive" marks the one corpus that IS a library as foreign.
-
-**Two spellings of a path, and the difference decides whether the replay
-works:**
-
-* **under `${TREE}`** — a file the replay must MAKE for itself. It travels
-  with the protocol.
-* **absolute** — a file the replay READS. The project's own sources do not
-  move.
-
-A file being *inside the build tree* does not make it generated: NASTRAN-95's
-`common_blocks.cpp` is hand-written and sits in the build tree because the
-Makefile runs there. Spell it `${TREE}/...` and the replay dies on a file
-nothing will ever create. **The test is "does the build produce it?", not
-"where does it live?"**
-
-`$` is reserved. Write a literal dollar as `$$`; a bare `$` is a malformed
-placeholder and must be refused, not passed through — the consumer spells its
-own variables the same way and will expand it to nothing.
+* **`stem` is the unit's identity** — the source below its own tree root with
+  one extension removed, case kept. A product names its inputs as stems, so a
+  link line refers to a unit by identity rather than by the file holding it.
+* **a path has two spellings and they mean opposite things:** under `${TREE}`
+  the replay must MAKE it (it travels with the protocol); absolute, the replay
+  only READS it (it does not travel). What decides is **"does the build
+  produce it?"**, never where the file happens to sit. A bare `$` is refused.
 
 ## Procedure
 
+**Every step that has a command IS that command.** The reading of the build —
+which commands ran, which are units, which are products, which units are the
+project's own, how every path is spelled — is `bench.py extract`, which also
+PROVES what it read. Do not reproduce any of it by hand: a hand reading
+differs from the tool in some detail that is invisible until the replay fails,
+and then it is the tool that is right.
+
 ### 1. Build the project with its own toolchain, and keep the tree
+
+This is the one step that is YOURS — the commands differ per project, and
+finding them is the research `fetch-benchmark-project` describes. Build
+**unmodified**: every artifact the replay produces is then comparable against
+a real one.
 
 ```bash
 cmake -S <project> -B <project>/build -G Ninja && ninja -C <project>/build
 # or: make -C <project>
 ```
 
-An **unmodified** baseline is the ideal reference, because then every artifact
-the replay produces can be compared against a real one.
+### 2. Extract the protocol, and let it PROVE itself
 
-### 2. Get the list of commands the build would run
+```bash
+python3 bench.py extract <build tree> --out <protocol.json>
+```
 
-Whatever the interface is (see the table above), you want every command:
-compiles, links, archive steps, and any command that generates a source.
+That is the whole of §A. It reads the protocol out of the built tree, then
+rebuilds from the protocol ALONE in a fresh tree and compares — by **defined
+symbols**, excluding versioned ones, because a Fortran object embeds its
+source path as spelled on the command line, so two correct builds of the same
+code are never byte-identical.
 
-Ask for the **whole** build, not its default target — a default target may
-build fewer products than the build has. For make that means `all`, and `-B`
-is not optional: without it an up-to-date tree prints "Nothing to be done"
-and you get an **empty answer with no error**, which reads exactly like a
-project with no translation units.
+**A non-zero exit is the next thing to work on, and it names the rule that
+failed.** Two outcomes, and they are different:
 
-**A Makefile at the root does not mean it is the whole build.** NASTRAN-95's
-root Makefile compiles ONE file; 1,872 units are built by `mis/`, `mds/` and
-`bd/`. Read the root *and* its subdirectories.
+* **the protocol is wrong** — fix it, and this is almost always the case. A
+  wrong protocol is not a wrong answer; it is a wrong answer multiplied by
+  every build that follows.
+* **the extractor cannot read this build** — a TOOL gap. The rules it applies
+  are documented where they live, each with the measurements behind it:
+  `protocolize/onboard/extract.py` (`units`/`_units`, `_products`,
+  `_generated`, `own_roots_for`, `capture_prepare`) and
+  `protocolize/tree_anchor.py` (the `${TREE}` spelling). Extend the rule that
+  is actually wrong, with a test; do not special-case a project.
 
-### 3. Interpret the commands
-
-Group them by what they do. A compiler invocation with `-c` is a **compile**;
-one without it is a **link**; `ar`/`ranlib` is an **archive** step.
-
-For each compile, recover: the source it consumes, the object it produces,
-and the directory it runs in. Then two things need care.
-
-**A unit is not always one command.** CMake compiles a scanned Fortran source
-in two edges — a `PREPROCESS` edge whose `file` is the real source and whose
-`output` is a `<src>-pp.<ext>` intermediate, and a `COMPILER` edge that
-consumes that intermediate. Looping over the records sees **twice as many
-"sources" as there are units**, half of them files that exist only in the
-build tree. Join the two on the intermediate, which is the one path both
-edges agree on.
-
-**A source can be compiled inside a link line**, with no object of its own
-until the link runs. It is still a unit. Give it a synthesised compile — the
-link line's own flags minus everything that names an input or an output —
-because reusing the link line would carry every object of the product into
-that unit's options as bare paths.
-
-**Do not expand an archive into its members.** `ld` pulls only what it needs
-out of an archive, so an unreferenced member stays out of the product;
-listing every member as an input links them all. Measured: the expanded link
-defined a symbol the project's own executable does not have.
-
-### 4. Write the protocol, then PROVE it
-
-**A protocol that has not been rebuilt from is not a product.** Generate a
-build from the protocol ALONE, in a fresh tree, compile it, and compare
-against the project's own:
-
-* **inputs** — every unit the protocol describes must be one the project's
-  build compiles, and vice versa;
-* **generated sources** — every one must be produced, byte for byte;
-* **products** — compare by **defined symbols**.
-
-Symbols rather than bytes, deliberately. A Fortran object embeds its source
-path AS SPELLED ON THE COMMAND LINE, so a make build (relative) and a CMake
-build (absolute) can never produce identical objects however correct both
-are; archive member order and timestamps differ for the same reason. **And
-exclude versioned symbols** (`stdout@GLIBC_2.2.5`): whether an executable
-re-exports one is a fact about the linker, not about the protocol. Measured
-on MYSTRAN: with them, one product differed by exactly that symbol; without,
-3,563 symbols and none differing.
-
-**Compare products by NAME, not by the path the protocol records.** Where the
-project's build puts its artifacts is that build's convention; a replay is
-under no obligation to reproduce it.
-
-**When the proof fails, fix the protocol — never the comparison.** A wrong
-protocol is not a wrong answer; it is a wrong answer multiplied by every
-build that follows, each failing somewhere that names the project rather than
-the protocol.
-
-### 5. What the proof is looking for
-
-Four defects it has actually caught, each of which fails SILENTLY:
-
-* **the module directory was replayed.** `-J<dir>` (gfortran) or
-  `-module <dir>` (ifort) must be REMOVED from a unit's options, not carried
-  through. A module directory is not a per-unit fact — the build system needs
-  it to work out which unit must compile first, because a `.mod` is a
-  compile-time dependency and nothing in a flat list of sources says so.
-  Measured on LAPACK: `la_xisnan` and its `use la_constants` went unordered,
-  and the replay failed on a module file not yet written.
-* **a flag's arity was miscounted.** A flag that takes an operand and is
-  counted as taking none leaves the operand behind as a bare token, and the
-  compiler reads it as another input file. A flag WITH no operand counted as
-  taking one swallows what follows. **Both spellings of a path-taking flag
-  occur**: `-JSRC` and `-J SRC`.
-* **the preprocess intermediate leaked into the options.** It is the file the
-  capture build compiled INSTEAD of the source, so a string compare against
-  the source cannot catch it.
-* **output flags were kept.** `-o <path>` among a unit's options makes the
-  compiler answer "output filename specified twice".
+The four ways a proof has actually failed, all silently — read them before
+concluding your protocol is right, and read the code above for how each is
+handled: a module directory (`-J<dir>`) carried into a unit's options; a
+flag's ARITY miscounted, so its operand leaks out as a bare input; a
+preprocess intermediate leaking into the options; and `-o <path>` kept among
+them.
 
 ## The OTHER half: how the project says a run was CORRECT
 
@@ -264,51 +139,42 @@ run of it was right?", and that is a **separate artifact**,
 the same way (gzipped, expanded on use).  Read this whole half before starting
 it, then follow the steps in order.
 
-**`reference/verification-plan-template.json` is the shape to fill in.**  It is
-an annotated plan: every section carries a `_README` explaining what the field
-means, what the project must declare for it, and what was MEASURED when it was
-got wrong — read it before filling anything, because a field like `atol` is a
-measurement only this project can make.  Stripping every `_`-prefixed key
-leaves a plan `problems()` accepts, and a test pins that, so the template
-cannot teach a shape the mechanism refuses.
+**`reference/verification-plan-template.json` is the annotated SHAPE.** Every
+section carries a `_README` explaining what the field means, what the project
+must declare for it, and what was MEASURED when it was got wrong — read it to
+understand a field (a value like `atol` is a measurement only this project can
+make). Stripping every `_`-prefixed key leaves a plan `problems()` accepts, and
+a test pins that. **You do not hand-fill it**: the plan is PRODUCED by the
+capture from the project's own declaration, and a field typed by hand is a
+value nobody can re-derive.
 
-### V1. Ask the project how it says a run is correct — do not infer it
+### V1. Hand the project's own declaration to the capture
 
-Three declarations exist in practice, and they are told apart by what the
-project HAS, never by its name:
+The plan's whole content — which cases exist, what each case's input is, what
+counts as a difference — is the PROJECT's statement, and the capture reads it
+from the project. You do not choose among shapes: `bench.py capture` detects
+them (tests the build registered; a case list with an `INCLUDE` chain; one
+directory per case) and REFUSES when it finds none or finds two, because an
+empty plan is not a neutral answer.
 
-| the project has | the plan says | who judges |
-|---|---|---|
-| tests its build system registered (`protocol.tests`) | `cases.kind: build_system_tests`, `target: tree`, `run.kind: suite` | the suite's own report (`self_report`) |
-| a case list with an `INCLUDE` chain and per-record fields | `cases.kind: case_list` (+ the record layout, read from the file) | per-case, against the reference's own output |
-| one directory per case | `cases.kind: one_per_dir` | per-case, against the reference's own output |
+**Two outcomes when it refuses, and they are different — the same split the
+build half has:**
 
-**What "the project's own declaration" means here.**  For the case list the
-RECORD LAYOUT is the project's — which column is the deck, which is a
-selector, which is a reference value and a tolerance — read THROUGH the
-`INCLUDE` chain and from the **widest** record, because a corpus mixes
-asserted and unasserted entries and a narrow one would drop the criteria for
-the whole corpus.  For the volatile-line list and the numeric tolerance
-(`rtol`/`atol`), pass the file that states them as `declaration=`; do NOT
-search for it, because a search that widened until it found something would
-find a NEIGHBOUR's.
+* **the declaration is wrong or missing** — the common case. Put the
+  project's statement where the capture reads it and pass it in.
+* **the capture cannot read a shape this project declares** — a TOOL gap.
+  Extend `capture_verification` in `protocolize/onboard/extract.py`, with a
+  test, so the next project with that shape is read too. **Do NOT hand-write
+  the plan instead**: a plan typed by hand is a value nobody can re-derive,
+  and the extractor keeps the gap for every project after this one.
 
-**A declaration may live in a SIBLING.**  A validation suite maintained as its
-own repository is a sibling directory named after the project
-(`MYSTRAN` / `MYSTRAN_Validation`), so the search looks at the project and then
-at the siblings whose names begin with it.  Ambiguity is REFUSED, never
-resolved by picking one: picking silently verifies a corpus against another
-project's cases, and the result reads as a wrong answer instead of a wrong
-choice.
+Two things ARE yours, because they are about where you put things:
 
-**Name the checkout after the PROJECT, not after the repository.**  The
-sibling rule is a name PREFIX, so a project whose repository is called
-`MYSTRANSolver` but whose validation suite is `MYSTRAN_Validation` only finds
-it when the checkout is placed at `MYSTRAN/` — `MYSTRAN_Validation` does not
-begin with `MYSTRANSolver`, and the suite is then invisible.  The same project
-fetched with `--name MYSTRAN` lands at `MYSTRAN/MYSTRAN/` and works.  When the
-two repositories are fetched separately, place them as SIBLINGS under one
-benchmark folder:
+**Name the checkout after the PROJECT, not after the repository.** A
+validation suite kept as its own repository is found as a SIBLING whose name
+begins with the project's — so a repository called `<Repo>Solver` whose suite
+is `<Project>_Validation` only works when the checkout sits at `<Project>/`.
+When the two are fetched separately, place them as siblings:
 
 ```
 benchmark/012-MYSTRAN/
@@ -316,30 +182,16 @@ benchmark/012-MYSTRAN/
    MYSTRAN_Validation/   <- its suite, a sibling
 ```
 
-**Completeness is not optional, and `problems()` is the authority.**  A plan
-is refused when it could produce a verdict with nothing behind it:
+Ambiguity is REFUSED rather than resolved by picking one, because picking
+silently verifies a corpus against another project's cases.
 
-* no `summary.require_min` — a run whose results nobody could read would pass;
-* a `process` run with no `inputs` — the workload is handed a bare input name
-  with its cwd in a work dir, so a plan that does not say what to stage
-  describes a run that reads nothing.  Measured: every case "passed";
-* a `golden.source: none` with no `stamp` — then every origin counts as ready,
-  including one a killed reference run left half written;
-* a bare `$` in a path (`$$` is a literal dollar), or a `golden.root` that is a
-  literal path rather than a binding;
-* a `golden.root` under the capture tree (`${TREE}`) while
-  `golden.source: reference_run` — that names a file the PROJECT SHIPPED, not
-  one a run produced.  See "The golden is made, never borrowed" below.
+**The comparison rules are DECLARED, never searched for.** The file that
+states them is passed in (`--declaration`), and so are the facts a program
+needs in order to RUN at all (`--facts`) — see the fetch skill's section on a
+run that reports nothing. A search that widened until it found something would
+find a neighbour's.
 
-### V2. Write the plan, then make the reference
-
-**The origin is one rule for every project**: run the REFERENCE instance
-through this same plan and keep what the plan calls golden.  The reference and
-the candidate therefore traverse the same code path, and "a failed reference
-run captures nothing" is true by construction instead of remembered per
-project.
-
-The capture is a command, not a snippet to reproduce by hand:
+### V2. Capture the plan, and make the reference
 
 ```bash
 python3 bench.py capture <build tree> \
@@ -348,30 +200,29 @@ python3 bench.py capture <build tree> \
     --out         <where to write verification_plan.json>
 ```
 
-It REFUSES if the plan it would write is not executable, printing every
-problem with `problems()` — so a non-zero exit means the plan is not a plan,
-and `[ ] is the only acceptable answer` is enforced by the tool rather than by
-the reader.  `--facts` is optional and only some projects need it; leaving it
-out when it is needed is caught downstream, because the cases then run and
-report nothing.
+That is everything in this half that is mechanical, and it includes the
+reference: the plan is run against the REFERENCE instance and its output kept
+as the golden, so "a failed reference run captures nothing" holds by
+construction rather than by anyone remembering it.
 
-### V3. The golden is made, never borrowed
+**A non-zero exit names the problem, and `problems()` is the authority** — the
+refusals are implemented there (`protocolize/verification_plan.py`), not in
+this page, and each one is a plan that could produce a verdict with nothing
+behind it: no `require_min`; a `process` run that stages no inputs; a
+`golden.source: none` with no stamp; a bare `$`; a `golden.root` that names a
+file the project SHIPPED. `--facts` is optional; leaving it out when it is
+needed is caught further downstream, because the cases then run and report
+nothing.
 
-A repository supplies **input files**;
-the tool runs the native build to make the golden.  That is what
-`reference_run` means, and it is not a formality: a corpus that ships its own
-reference output usually produced it on another machine, another compiler and
-another operating system — one old corpus's shipped `.out` files all carry a
-1995 banner from an OS this machine does not have, and not one of its 132 cases
-is byte-identical to what the same decks produce here.  Using those as goldens
-would turn a real comparison into a fixture nothing can satisfy, and worse, a
-build that merely copied a stale file would "pass".
-
-So the repository's own reference output is an **input**, and comparing against
-it — a legitimate thing to want — belongs in the project's `declaration`, never
-in `golden`.  `golden.root` is therefore restricted to a run output root
-(`{origin}`, `{results}`); anything else is refused when the plan is read.
-
+**Why the golden is never the project's own shipped output.** A repository
+supplies **input files**; a run supplies the golden. Shipped reference output
+came from another machine, compiler and decade — measured: not one of one
+corpus's 132 shipped `.out` files is byte-identical to what the same decks
+produce here, so using them would be a fixture nothing can satisfy, and a
+build that merely copied a stale file would "pass". Comparing against the
+project's own reference output is legitimate, and belongs in the project's
+`declaration`, never in `golden` — which is why `golden.root` is restricted to
+a run output root and anything else is refused when the plan is READ.
 
 ### V4. Run §B on the project AND on the replay
 

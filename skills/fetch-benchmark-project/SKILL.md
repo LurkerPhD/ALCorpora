@@ -39,49 +39,45 @@ number is assigned, but no protocol is recorded, and the reason is written
 down. Do not invent a build system for them — a recorded command is the
 authority, and inventing one is the thing this tool exists to avoid.
 
-## Procedure — one AUTONOMOUS loop
+## Procedure — ONE call, and your judgement where it stops
+
+```bash
+python3 bench.py fetch <url-or-path> --name X      # a FIRST admission
+python3 bench.py admit <benchmark dir> --…          # re-prove one
+```
+
+**The loop itself is the tool's.** Numbering, fetching, the native build and
+test, §A, §B on the project and on the replay, and the row — `admit.py` runs
+them in order and stops where it must. You do not re-run those steps by hand
+or reproduce them in your own sequence; you read what the call returns and
+decide the ONE thing it cannot: **the per-project build commands, and the fix
+when the build fails.**
 
 You run this to completion yourself. **Do not stop between iterations to ask
 the user**: a project that fails at a step is the next thing to work, and the
 loop is what "the skill handles it" means.
 
-```
-admit a project:
-  repeat until the project is LEGAL, or you are genuinely BLOCKED:
-
-    1. NUMBER it (the smallest free number) and FETCH the source.
-    2. Build + verify NATIVELY, with the project's own toolchain.
-       If it FAILS -> diagnose (below), turn the fix into a `prepare` op
-                     and/or a build flag, and RETRY. Loop here until the
-                     build succeeds or you cannot find a fix.
-    3. §A: extract_and_prove — the protocol must replay the project.
-       If it FAILS -> that is a TOOL gap: record it and work on the tool.
-    4. §B: capture_verification, then run the plan on the project AND on
-       the replay. If the flat verdict differs -> a TOOL gap.
-    5. LEGAL -> record the row in benchmark.csv and move on.
+```bash
+# the answer names the step that failed; give the project its own commands
+python3 bench.py fetch <url-or-path> --name X \
+    --configure "" \                                  # nothing to configure
+    --build "make -C source/mis && make -C source/mds" \  # its OWN build
+    --test "<a script that runs it and checks its own banner>" \
+    --tree-subdir source \
+    --prepare fix.json \        # ops YOU diagnosed, each {op, check, run}
+    --facts facts.json --declaration rules.json         # its own declarations
 ```
 
 "BLOCKED" means: the failure has no fix you can name AND confirm — a missing
 toolchain that cannot be installed, a resource the repo does not ship. Report
 that in one line. Everything else, fix and continue.
 
-The mechanical half is `bench.py` at the repository root, which delegates to
-the flow in `admit.py` and the mechanical pieces in `scripts/fetch.py`. Call
-`bench.py`, read what it says, and decide the next move. The part that is per
-project — the native build commands, and the fix when it fails — is YOURS.
-
-```bash
-python3 bench.py fetch <url-or-path> --name X
-#   succeeds            -> the project is LEGAL; move on
-#   REFUSED / NOT LEGAL -> read the reason, decide the fix, retry:
-python3 bench.py fetch <url-or-path> --name X \
-    --build "<the project's build, with any flags you found>" \
-    --prepare fix.json     # ops YOU diagnosed, each {op, check, run}
-# ... and when the cases run but report nothing, the project's own
-# declaration of what its programs need:
-python3 bench.py fetch <url-or-path> --name X \
-    --facts facts.json --declaration rules.json
-```
+**A refusal that is not about the project is a TOOL gap.** When §A cannot read
+the build, or the capture cannot read a declaration shape, the fix is to
+extend the rule that is wrong — `onboard-project` names each one and where it
+lives — **never** to work around it in this loop with a hand-made protocol or
+plan. That is the difference between the corpus teaching the tool something
+and the corpus being special-cased, and the second is invisible afterwards.
 
 **Use `bench.py`, not a hand-written equivalent.** Every atomic operation has
 one definition there (`tree`, `wipe`, `plan`, `verify`, `evidence`, `row`,
@@ -92,24 +88,13 @@ marker at the top, and a re-derived "clear the build" deleted a make project's
 source directory. When an operation is missing, ASK for it to be added to
 `bench.py`; do not write a second one beside it.
 
-**The defaults are CMake+Ninja, and they are only defaults.** `--configure`,
-`--build`, `--test` and `--tree-subdir` all describe ONE build system, so a
-project that is not CMake must say so or it is refused at
-`cmake -S ...` — a failure that reads as "this project does not build" when
-the truth is that nobody told the loop how. For a hand-written make project,
-for instance:
-
-```bash
-python3 bench.py fetch <url> --name X \
-    --configure "" \
-    --build "make -C source/mis && make -C source/mds" \
-    --test "<a script that runs the program on a deck and checks its own banner>" \
-    --tree-subdir source
-```
-
-`--configure ""` is the right answer when a project has no configure step at
-all — "nothing to do" is a true statement about such a project, while
-running CMake at it is not.
+**The defaults are CMake+Ninja and they are ONLY defaults.** `--configure`,
+`--build`, `--test` and `--tree-subdir` describe ONE build system, so a project
+that is not CMake must say so or it is refused at `cmake -S ...` — a failure
+that reads as "this project does not build" when the truth is that nobody told
+it how. `--configure ""` is the right answer when there is nothing to
+configure: "nothing to do" is true about such a project, while running CMake
+at it is not.
 
 **Commands that reference the source.** `{src}` in any of these is replaced
 with the project's source directory, so a path can be written relative to it
