@@ -61,6 +61,36 @@ sh regress.sh              # 全部 14 个项目；也可 `sh regress.sh 001 009
 in-source(只删构建系统生成物)。**不要在别处再写一遍清构建的逻辑**——实测：重写的那版
 把 009 的 `source/` 整个删了，因为它的 `tree_subdir` 指的是 Makefile 所在处，不是构建产物处。
 
+## 四之二、固定工具：必须用，不许现场造
+
+**所有原子操作都是 `bench.py` 的子命令。需要做这些动作时，一律调它；不许自己拼 shell、
+不许另写一份等价逻辑。** 理由就一条：**agent 现场造的轮子和已有工具一定会在某个细节上
+分叉**，而那个分叉是静默的。实测两次：一次是重写"哪个目录是源码树"——对"构建标记在内层、
+顶层没有标记"的 make 项目判错，把外层文件夹当成树；一次是重写"清构建"——把 009 的
+`source/` 整个删了。**两次都是因为绕开了已有的实现。**
+
+```bash
+python3 bench.py tree     DIR              # 树 = 哪个目录（委托 admit.py）
+python3 bench.py wipe     DIR...           # 清本工具生成的产物（不动项目文件、不动构建）
+python3 bench.py plan     DIR              # 计划是否可执行 + 声明了几条 drop/keep/mask
+python3 bench.py verify   DIR              # §B 裁决（不清理，只跑）
+python3 bench.py evidence DIR [--shift-date]  # 跑两次参考，报"动了但未声明"的行形状
+python3 bench.py row      DIR              # 该项目在 benchmark.csv 的那一行
+python3 bench.py admit    DIR [--…]        # 整条流程（委托 admit.py --readmit）
+```
+
+**新增原子操作时**：加进 `bench.py` 一个子命令，并**委托**已有的实现，
+`tests/test_the_fixed_tools_answer_the_flows_question.py` 会断言它与原实现一致。
+**在这里再实现一遍是错的**——工具的价值就是"只有一份定义"。
+
+`evidence` 是给**填规则的人/agent** 的证据：它跑两次参考（第二次可换 `TZ` 换一天），
+施加计划**已声明**的 drop/keep/mask，只报**仍未覆盖**的行形状。看到它列出的形状时记住两条：
+**同机制的多行会一起动**（一个计时块、一张池报告）；**能饱和的定宽字段会把"不同"变"相同"**
+（`I8` 打不下就显示 `********`），所以"看起来完全稳定"不构成"真的没动"。
+
+判定标准是**它有没有进逻辑**（同第二节）：`bench.py` 自身不含任何语言/构建系统/项目名，
+通用；语料专属的**参数**只出现在 `regress.sh`（已 gitignore）里。
+
 ## 五、提交的门槛：三条同时成立，缺一不可
 
 `regress.sh` 全 PASS **只是门槛之一**，不是全部。一个提交要进历史，必须同时满足：
