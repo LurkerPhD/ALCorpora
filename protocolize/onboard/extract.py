@@ -2179,6 +2179,22 @@ def _corpus_rules(declaration: Path | str | None) -> dict:
     spec = raw.get('comparison') or {}
     if isinstance(spec.get('drop'), list):
         found['drop'] = [str(p) for p in spec['drop']]
+    # `keep` (a whitelist) and `mask` (in-line trimming) are the other two
+    # shapes of "what not to compare", and they are read here for the same
+    # reason `drop` is: they are the corpus's own statement, not something to
+    # infer from its output.  `mask` is the one that matters for a line that
+    # mixes a judged value with a run-dependent one — dropping such a line
+    # stops comparing the judged value too, which is a comparison that
+    # accepts a difference.
+    if isinstance(spec.get('keep'), list):
+        found['keep'] = [str(p) for p in spec['keep']]
+    if isinstance(spec.get('mask'), list):
+        pairs: list = []
+        for m in spec['mask']:
+            if isinstance(m, (list, tuple)) and len(m) == 2:
+                pairs.append([str(m[0]), '' if m[1] is None else str(m[1])])
+        if pairs:
+            found['mask'] = pairs
     for key in ('rtol', 'atol'):
         if isinstance(spec.get(key), (int, float)):
             found[key] = float(spec[key])
@@ -2204,6 +2220,14 @@ def _lockstep_rules(rules: dict | None) -> dict:
     out = {'drop': rules.get('drop', []),
            'rtol': rules.get('rtol', 0.05),
            'atol': rules.get('atol', 0.5)}
+    # Only carry the modes the corpus DECLARED.  An absent `keep`/`mask` must
+    # stay absent rather than become an empty list: the plan schema refuses a
+    # key the mechanism does not read, and an empty list would be noise the
+    # reader has to reason about.  A declared one travels.
+    if rules.get('keep'):
+        out['keep'] = list(rules['keep'])
+    if rules.get('mask'):
+        out['mask'] = [list(p) for p in rules['mask']]
     return out
 
 
