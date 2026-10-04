@@ -341,7 +341,10 @@ capture_verification(proto, build, root, project_root, declaration, facts)
         |     |- read records THROUGH the INCLUDE chain
         |     |- column layout from the WIDEST record (a list mixes
         |     |  asserted and unasserted entries)
-        |     `- deck_root derived from the tree (not necessarily the list's dir)
+        |     |- deck_root derived from the tree (not necessarily the list's dir)
+        |     `- the report's suffix OBSERVED from the stored references, so a
+        |        program that writes `.F06` for a `.bdf` deck is not assumed
+        |        to write beside its input (a declaration still wins)
         |- one_per_dir (verification/ / Verification/ / tests/cases)
         |     |- input-name spelling derived from the tree
         |     `- the WHOLE directory is staged (support decks and restart

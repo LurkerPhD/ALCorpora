@@ -2325,6 +2325,11 @@ def _verification_from_case_list(proto: Protocol, cases_file: Path,
     decks = _case_decks(cases_file, sample)
     proj_root = cases_file.parent
     decks_root = _deck_root(cases_file, decks)
+    # What the program WRITES, as the project states it on disk, rather than
+    # the deck's own suffix.  A corpus that compares a run against STORED
+    # reference output keeps those references named by the deck's stem — so
+    # the tree itself says what the report's name is.
+    observed = _observed_output_suffix(cases_file, decks, decks_root)
     product = ''
     for p in proto.products:
         if p.kind == 'exe':
@@ -2350,9 +2355,9 @@ def _verification_from_case_list(proto: Protocol, cases_file: Path,
         # harness SAVED, which is a different suffix on this corpus: a plan
         # that assumed the two agree found no artifact and reported "no
         # output" for all 485 cases.
-        'produced': [{'name': _artifact_spelling(facts), 'as': 'out'}],
+        'produced': [{'name': _artifact_spelling(facts, observed), 'as': 'out'}],
         'golden': {'source': 'reference_run', 'root': '{origin}',
-                   'path': _golden_spelling(facts)},
+                   'path': _golden_spelling(facts, observed)},
         'assertions': _case_list_assertions(facts, rules),
         'report': {'repeats': 1},
         'summary': {'require_zero': ['diff', 'crash', 'timeout'],
@@ -2390,27 +2395,71 @@ def _case_list_assertions(facts: dict | None, rules: dict | None) -> list:
     ]
 
 
-def _artifact_spelling(facts: dict | None) -> str:
+def _observed_output_suffix(cases_file: Path, decks: list[str],
+                            decks_root: Path) -> str:
+    """The suffix a program's report carries, OBSERVED from the project.
+
+    A case-list corpus that judges a run against STORED reference output
+    keeps those references in the tree named by the deck's own stem with the
+    suffix its program writes — so the tree is where the report's name is
+    WRITTEN DOWN.  Reading it replaces the default (the deck's own suffix),
+    which is wrong the moment a program writes a report under a fixed
+    extension: measured on a corpus whose decks are ``.bdf`` and whose
+    reports are ``.F06``, where every case thus found no artifact and the
+    reference run captured nothing at all.
+
+    The directory holding the DECKS is skipped, so the decks' own suffix
+    cannot be mistaken for the report's.  The winner must explain a real
+    share of the decks — one stray file does not name the report.  Nothing
+    found (or too little to attribute) returns ``''``, and the caller keeps
+    the deck's own suffix, which is what a program that writes beside its
+    input does.
+    """
+    stems = {Path(rel).stem for rel in decks}
+    if not stems:
+        return ''
+    decks_root = decks_root.resolve()
+    counter: dict[str, int] = {}
+    for cand in cases_file.parent.rglob('*'):
+        if not cand.is_file() or cand.stem not in stems:
+            continue
+        try:
+            cand.resolve().relative_to(decks_root)
+        except ValueError:
+            pass
+        else:
+            continue            # the deck itself, not a report of it
+        counter[cand.suffix] = counter.get(cand.suffix, 0) + 1
+    if not counter:
+        return ''
+    suffix, n = max(counter.items(), key=lambda t: t[1])
+    return suffix if n >= max(1, len(stems) // 4) else ''
+
+
+def _artifact_spelling(facts: dict | None, observed: str = '') -> str:
     """Where this corpus's program WRITES its report, per deck.
 
     ``{deck_out}`` is the deck's relative path with the suffix the corpus
     writes; a corpus whose program writes something else says so in its own
-    facts.  The default is the deck's own suffix, which is what a program
-    that writes next to its input does.
+    facts, or shows it by what it keeps in the tree (``observed``).  The
+    fallback is the deck's own suffix, which is what a program that writes
+    next to its input does.
     """
-    suffix = ((facts or {}).get('artifact') or {}).get('suffix')
+    spec = (facts or {}).get('artifact') or {}
+    suffix = spec.get('suffix') or observed
     # Written into the case's own work dir, named after the input it was
     # given — which is where a program run with `cwd={work}` writes.
     return '{deck_out}' if not suffix else '{work}/{input.stem}' + suffix
 
 
-def _golden_spelling(facts: dict | None) -> str:
+def _golden_spelling(facts: dict | None, observed: str = '') -> str:
     """What the reference harness SAVED a golden as, per deck.
 
-    Kept separate from the artifact's name because on this corpus they are
+    Kept separate from the artifact's name because on some corpora they are
     different suffixes for the same bytes, and only the corpus knows that.
     """
-    suffix = ((facts or {}).get('artifact') or {}).get('golden_suffix')
+    spec = (facts or {}).get('artifact') or {}
+    suffix = spec.get('golden_suffix') or spec.get('suffix') or observed
     # Mirrors the DECK's own relative path, under the origin — which is where
     # the reference harness saved it (`out_rel = deck_rel.with_suffix('.out')`).
     return '{deck_out}' if not suffix else '{deck_stem}' + suffix

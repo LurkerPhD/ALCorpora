@@ -11,5 +11,5 @@ number,name,language,build_system,verification,native,build_protocol_a,verify_on
 010,zlib,cpp,,,yes,yes,yes,yes,PASS,fetched from source
 011,fmt,cpp,,,yes,yes,yes,yes,PASS,fetched from source
 012,NASTRAN-95,fortran,make,nastran on 132 verification decks (golden),yes,yes,yes,yes,PASS,one_per_dir; 1831 units; 5 products replayed in A; 132/132 on the project and on the replay
-013,MYSTRAN,fortran,CMake+Ninja,own runner over 490 decks (MYSTRAN_Validation),yes,yes,no,no,FAIL_B_REF,reference run captured no goldens
+013,MYSTRAN,fortran,CMake+Ninja,own runner over 488 decks (MYSTRAN_Validation),yes,yes,yes,yes,PASS,"488 decks; 488/488 on the project and on the replay; in-source build, native commands and the comparison rules supplied at the seams"
 014,lapack,fortran,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,6794 units; 65 products replayed in A; 215/215 on the project and on the replay

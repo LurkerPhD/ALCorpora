@@ -296,7 +296,9 @@ capture_verification(proto, build, root, project_root, declaration, facts)
         |- case_list (cases.txt / testcases.txt / *.files)
         |     |- 穿 INCLUDE 链读记录
         |     |- 列布局取**最宽**的记录(列表里混着有断言和无断言的条目)
-        |     `- deck_root 从树里推(不一定是列表所在目录)
+        |     |- deck_root 从树里推(不一定是列表所在目录)
+        |     `- 报告的扩展名从**已存的参考产物**里观测,`.bdf` 的 deck 写
+        |        `.F06` 就不会被当成"写在输入旁边"(有声明时声明优先)
         |- one_per_dir (verification/ / Verification/ / tests/cases)
         |     |- 输入名拼写从树里推
         |     `- **整个**目录被 stage(支撑 deck 和 restart 状态就在输入旁边)
