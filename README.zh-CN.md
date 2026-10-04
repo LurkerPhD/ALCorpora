@@ -86,33 +86,99 @@ import 它——所以 layer 1 永远不会反过来去够 layer 2。
 
 ## 交付流程
 
-```
-                     任意项目(语言无关)
-                          |
-   1  研究:哪个构建系统?怎么验证?需要 prepare 吗?
-                          |                    <- 这一步是 SKILL 的,不是脚本的:
-   2  原生构建一次 + 原生验证一次              "怎么构建 X" 是逐项目不同的研究结果
-        |- 失败,且能持久修复 -> 记成一个 prepare op
-        `- 否则              -> 报失败
-                          |
-   3  归一化:extract.py / onboard.py 填两个模板
-                          |
-              +-----------+-----------+
-              v                       v
-        [构建协议]              [验证协议]
-              |                       |
-   4 §A 自验证:                5 §B 自验证:
-      协议 -> flat build ->         同一 plan 在 reference 上跑
-      编译 -> 与原生比对            + flat build 跑同一 plan 得同裁决
-              |                       |
-              +-----------+-----------+
-                          v
-                  两个已自验证的产物
+一次准入,从头到尾。**`[AGENT]` 是只有泛化才能给出的判断;`[PY]` 是工具确定性执行的
+一步。** agent 只在**工具停下来**的地方被调用,下面每一处都写明了它该产出什么——以及
+它**绝不该**做什么。
+
+```python
+ADMIT_ONE_PROJECT(source):
+    # ── [AGENT] 唯一一个"每个项目都必然要泛化"的步骤 ─────────────────────
+    # 「这个项目怎么原生构建、怎么原生验证」没有确定答案。这是 agent 必须
+    # 产出的唯一研究结果。
+    configure, build, test, tree_subdir = research_how_it_builds(source)
+
+    # ── [PY] 以下全部在一次调用里跑完 ────────────────────────────────────
+    [AGENT] -> python3 bench.py {fetch <source> | admit <dir>} <args...>
+    #   fetch = 首次准入;  admit = 重证一个已在 benchmark/ 里的
+
+    n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
+    fetch(source -> dest/inner)                 # clone 或 copy,带重试
+    src = inner_source(dest)                    # 按"它持有什么"选,不按名字
+    if re-prove: clear_previous_build(src, tree_subdir)
+        # in-source -> 只删构建系统生成的状态,绝不删目录本身
+
+    # ── 1-2  原生:项目用自己的工具链构建、用自己的方式验证 ───────────────
+    for op in prepare_ops:                      # 幂等:{op, check, run}
+        if not prepare_done(op): run(op.run)
+    for line in (configure, build, test):       # 项目自己的命令
+        if 失败: record(REFUSED); -> [AGENT] JUDGE_BUILD_FAILURE
+
+    # ── 3  §A:构建协议,靠"重放它"来证明 ────────────────────────────────
+    proto = extract_protocol(build)             # 问构建系统自己的子工具
+        # build.ninja -> ninja 后端;  有 Makefile -> make 后端
+        # 都没有      -> REFUSE,并说清这棵树"是什么"(即缺一个后端)
+        # -> 单元、产物、生成物、own_roots、路径的两种拼写
+    self_check(proto)                           # 镜像树;删掉生成源**和产物**;
+        # flat_cmake -> cmake+ninja;逐产物按**已定义符号**比对
+        # (两次正确的构建永远不会逐字节相同)
+    if 不能重放: record(A=no); -> [AGENT] JUDGE_EXTRACTION_FAILURE
+
+    # ── 4  验证协议:从项目自己的声明里读出来 ────────────────────────────
+    plan = capture_verification(proto, declaration, facts)
+        # 定位验收方式:注册的测试 | 用例清单 | 每用例一个目录
+        # 读声明的比较规则(drop/keep/mask/rtol/atol);展开 facts
+    if plan.problems(): record(FAIL_B_PLAN); -> [AGENT] JUDGE_PLAN
+        # 空计划、读不懂的计划都**不是**中性答案
+
+    # ── 5  参考跑:golden 是"做出来"的,绝不"借来" ───────────────────────
+    if plan.golden is reference_run:
+        if ensure_reference(plan) == 0: record(FAIL_B_REF); -> [AGENT] JUDGE_NO_GOLDENS
+
+    # ── 6  §B 跑两次 —— 项目构建上 与 重放上 的裁决必须**一致** ──────────
+    if verify(project) != green: record(FAIL_B_REF);  -> [AGENT] JUDGE_B_PROJECT
+    if verify(replay)  != green: record(FAIL_B_FLAT); -> [AGENT] JUDGE_B_FLAT
+
+    record(PASS, language, notes)               # 只有走到这里才算 legal
+
+
+# ══ agent 只在这些出口被调用,且每次都只产出"数据" ══════════════════════════
+
+[AGENT] JUDGE_BUILD_FAILURE(log):
+    读 log;诊断成因;修法二选一:
+        prepare_op {op, check, run}   # 写进项目树 = 补丁;必须幂等
+        build_flag                    # 调用层适配,不算补丁
+    重跑                             # 没让构建通过的"修复"**不记录**
+    若定不出可确认的修法: BLOCKED
+
+[AGENT] JUDGE_EXTRACTION_FAILURE(exc):
+    "协议错了"                -> 改传给工具的参数
+    "工具读不了这种构建"      -> 扩 extract.py 里那条规则 + 一个测试
+                                 # **绝不**手写一份协议绕过
+
+[AGENT] JUDGE_PLAN(problems):
+    声明错/缺                 -> 写项目自己的声明
+    捕获器读不了这种声明形状  -> 扩 capture_verification + 一个测试
+                                 # **绝不**手写一份计划绕过
+
+[AGENT] JUDGE_NO_GOLDENS():
+    写 facts.json             # 程序"能跑起来"所需、但树里看不出的事实
+
+[AGENT] JUDGE_B_PROJECT(printed):
+    python3 bench.py evidence --shift-date    # [PY] 跑两次参考,第二次改 TZ
+    对每条被报为"未覆盖"的行形状:
+        识别类别 -> 把一条规则写进项目自己的声明
+        # drop | keep | mask;默认 mask;同行有被判量时**绝不 drop 整行**
+    重新捕获;重新测量(必须为空);在**重新捕获**的 golden 上重验
+        # **绝不**把一条差异"归为合理"就放过
+
+[AGENT] JUDGE_B_FLAT(printed):
+    项目上绿、重放上不绿 -> 是**工具**错了,不是项目
 ```
 
-第 1–2 步属于 skill,因为「怎么构建项目 X」逐项目不同(这里一个手写 shell,那里
-CMake)。把它编码进工具,就是把项目知识推进了工具里。一条可复用的原生构建命令记成
-一个 `prepare` op——幂等,带 `check`,所以**最多跑一次**。
+**每个项目都要付的那一步,只有 `research_how_it_builds`**:一个项目的原生工具链是
+**关于那个项目**的知识,把猜测编码进工具就是把项目知识推进了工具。agent 其余所有动作
+都由**工具停下来**触发,产出的都是**数据**——一个 prepare op、一条事实、一条规则,或
+一条被扩写的规则——**从不是流程的一步**。
 
 ---
 

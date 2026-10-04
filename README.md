@@ -96,35 +96,101 @@ layer 2.
 
 ## The delivery flow
 
-```
-                     any project (language-agnostic)
-                          |
-   1  research: which build system? how is it verified? does it need prepare?
-                          |                    <- this step is the SKILL's, not a script's:
-   2  build natively once + verify natively once    "how to build X" is a per-project
-        |- fails, and a fix persists -> record a prepare op    research result
-        |- otherwise                 -> report failure
-                          |
-   3  unify: extract.py / onboard.py fill the two templates
-                          |
-              +-----------+-----------+
-              v                       v
-        [build protocol]        [verification protocol]
-              |                       |
-   4 §A self-verify:          5 §B self-verify:
-      protocol -> flat build ->    the same plan runs on the reference
-      compile -> compare native    + the flat build reaches the same verdict
-              |                       |
-              +-----------+-----------+
-                          v
-             two self-verified artifacts
+One admission, end to end. **`[AGENT]` is a judgement only generalisation can
+supply; `[PY]` is a step the tool performs deterministically.** The agent is
+entered ONLY where the tool STOPS, and each such place below states what it
+must produce — and what it must never do.
+
+```python
+ADMIT_ONE_PROJECT(source):
+    # ── [AGENT] the only step EVERY project needs generalisation for ──────
+    # "how does this project build and verify itself" has no deterministic
+    # answer. This is the one research result the agent must produce.
+    configure, build, test, tree_subdir = research_how_it_builds(source)
+
+    # ── [PY] everything below runs inside one call ────────────────────────
+    [AGENT] -> python3 bench.py {fetch <source> | admit <dir>} <args...>
+    #   fetch = a FIRST admission;  admit = re-prove one already in benchmark/
+
+    n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
+    fetch(source -> dest/inner)                 # clone or copy, with retries
+    src = inner_source(dest)                    # chosen by what it HOLDS, not its name
+    if re-prove: clear_previous_build(src, tree_subdir)
+        # in-source -> only the state the build system generated, never the dir
+
+    # ── 1-2  NATIVE: the project builds and verifies with its OWN toolchain ─
+    for op in prepare_ops:                      # idempotent: {op, check, run}
+        if not prepare_done(op): run(op.run)
+    for line in (configure, build, test):       # the project's OWN lines
+        if it fails: record(REFUSED); -> [AGENT] JUDGE_BUILD_FAILURE
+
+    # ── 3  §A: the build protocol, PROVEN by replaying it ──────────────────
+    proto = extract_protocol(build)             # ask the build system's sub-tools
+        # build.ninja -> ninja backend;  a Makefile -> make backend
+        # neither     -> REFUSE, naming what the tree IS (a backend is missing)
+        # -> units, products, generated inputs, own roots, path spellings
+    self_check(proto)                           # mirror the tree; delete generated
+        # sources AND products; flat_cmake -> cmake+ninja; compare each product by
+        # DEFINED SYMBOLS (two correct builds are never byte-identical)
+    if it does not replay: record(A=no); -> [AGENT] JUDGE_EXTRACTION_FAILURE
+
+    # ── 4  the verification protocol, read out of the project's OWN statement ─
+    plan = capture_verification(proto, declaration, facts)
+        # locate the acceptance: registered tests | a case list | one dir per case
+        # read the comparison rules (drop/keep/mask/rtol/atol); expand the facts
+    if plan.problems(): record(FAIL_B_PLAN); -> [AGENT] JUDGE_PLAN
+        # an empty or unreadable plan is NOT a neutral answer
+
+    # ── 5  reference run: the golden is MADE, never borrowed ────────────────
+    if plan.golden is reference_run:
+        if ensure_reference(plan) == 0: record(FAIL_B_REF); -> [AGENT] JUDGE_NO_GOLDENS
+
+    # ── 6  §B twice — the project's build AND the replay must AGREE ─────────
+    if verify(project) != green: record(FAIL_B_REF);  -> [AGENT] JUDGE_B_PROJECT
+    if verify(replay)  != green: record(FAIL_B_FLAT); -> [AGENT] JUDGE_B_FLAT
+
+    record(PASS, language, notes)               # only here is it legal
+
+
+# ══ the agent is entered ONLY here, and each time to produce DATA ═══════════
+
+[AGENT] JUDGE_BUILD_FAILURE(log):
+    read(log); diagnose the cause; the fix is one of:
+        prepare_op {op, check, run}   # writes in the project tree = a PATCH; idempotent
+        build_flag                    # caller-level adaptation; not a patch
+    retry                               # a fix that did not make it build is NOT recorded
+    if nothing can be confirmed: BLOCKED
+
+[AGENT] JUDGE_EXTRACTION_FAILURE(exc):
+    "the protocol is wrong"            -> fix the arguments
+    "the tool cannot read this build"  -> extend the RULE in extract.py + a test
+                                          # NEVER hand-write a protocol to get past it
+
+[AGENT] JUDGE_PLAN(problems):
+    declaration wrong or missing       -> write the project's own declaration
+    the capture cannot read a shape    -> extend capture_verification + a test
+                                          # NEVER hand-write a plan to get past it
+
+[AGENT] JUDGE_NO_GOLDENS():
+    write facts.json                    # what the programs need in order to RUN
+
+[AGENT] JUDGE_B_PROJECT(printed):
+    python3 bench.py evidence --shift-date    # [PY] two reference runs, second shifted
+    for each line shape it reports as UNCOVERED:
+        recognize the category -> write a rule into the project's declaration
+        # drop | keep | mask; prefer mask; never drop a line carrying a judged value
+    re-capture; re-measure (must be empty); re-verify on a FRESH capture
+        # NEVER call a difference "reasonable" and move on
+
+[AGENT] JUDGE_B_FLAT(printed):
+    green on the project but not on the replay -> the TOOL is wrong, not the project
 ```
 
-Steps 1–2 belong to the skill because "how to build project X" differs per
-project (a hand-written shell here, CMake there). Encoding it in the tool
-would push project knowledge into the tool. A reusable native-build command
-is recorded as a `prepare` op — idempotent, with a `check`, so it runs **at
-most once**.
+The single `[AGENT]` step every project pays for is `research_how_it_builds`:
+a project's native toolchain is knowledge about THAT project, and encoding a
+guess in the tool would push project knowledge into the tool. Everything else
+the agent does is triggered by the tool STOPPING, and produces data — a
+prepared op, a fact, a rule, or an extended rule — never a step of the flow.
 
 ---
 
