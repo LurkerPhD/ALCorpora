@@ -15,7 +15,7 @@ plan, `protocolize.volatiles` measures what two runs disagree on. This file
 only gives them one name and one place to be found.
 
     bench.py tree    DIR        which directory is the plan's ${TREE}
-    bench.py wipe    DIR...     remove this tool's generated artifacts
+    bench.py wipe    DIR...     restore a checkout to what git brought
     bench.py plan    DIR        the plan's problems, and the modes it declares
     bench.py extract  TREE [--out F]   §A: read the build protocol OUT of a
                                 built tree, and prove it replays
@@ -49,18 +49,24 @@ if str(REPO) not in sys.path:
 
 BENCH = REPO / 'benchmark'
 
-#: This tool's own output beside a project.  Cleared by `wipe`, and NOT the
-#: project's files: its sources, its build files, and the declarations it
-#: ships about itself (`facts.json`, `declaration.json`, `admit.json`) are the
-#: material a re-derivation CONSUMES and are deliberately left alone.
-GENERATED_FILES = ('protocol.json', 'verification_plan.json')
-GENERATED_DIRS = ('origin_release', 'benchmark_results', '.work')
-
-#: Directories a benchmark folder holds that are OUTPUT, not its checkout.
-#: Spelled here so "which directory is the tree" cannot drift from "which
-#: directory is output".
-_OUTPUT_DIRS = frozenset(GENERATED_DIRS) | {'results', 'build'}
-_MARKERS = ('CMakeLists.txt', 'Makefile', 'configure')
+#: What `wipe` asks, and the only thing it asks: does git own this path?
+#:
+#: A benchmark folder holds the checked-out project PLUS everything the flow
+#: produced beside it — the protocol, the plan, the run's results, and the
+#: per-project research results (the ops that made the build work, the facts a
+#: program needs before it will run, the comparison rules, the test driver).
+#: Those last four are OUTPUT: they were derived FOR that project, and leaving
+#: them in place makes a "regression" replay an answer it wrote down earlier
+#: instead of re-deriving it.  Naming them in a list here was the older shape,
+#: and the list was WRONG — it kept `facts.json`/`declaration.json`/
+#: `prepare-ops.json`/`native-verify.sh` while calling itself "remove every
+#: artifact this tool generated", so the cleanup and its own description
+#: disagreed and the regression consumed its own output.
+#:
+#: So there is no list.  A checkout is restored to HEAD (submodules included);
+#: everything git does not own is removed.  Which paths those are is git's
+#: answer, asked per path, and it cannot drift from the checkout the way a
+#: name list does.
 
 
 # ── atomic operations ─────────────────────────────────────────
@@ -87,17 +93,86 @@ def cmd_tree(args: list[str]) -> int:
     return 0
 
 
-def cmd_wipe(args: list[str]) -> int:
-    """Remove every artifact THIS TOOL generated, for one or more projects.
+def _git_brought(path: Path) -> bool:
+    """Whether git brought *path* — a checkout, or a file a repository tracks.
 
-    The BUILD is not touched here. Clearing a build is `admit.py --readmit`'s
-    job and it is the only place that knows how: an out-of-source build
-    directory is removed whole, while a build living among the sources — where
-    deleting the directory would delete the project — has only the state the
-    build system itself generated removed. Measured: a reimplementation here
-    deleted a hand-written make project's source directory, because that
-    project's `tree_subdir` names where its Makefiles ARE, not where a build
-    put its output.
+    Asked of git rather than by a list of names, because "what is part of the
+    checkout" is git's question and a list here is a second answer that drifts
+    from the first.  A submodule is a checkout the superproject points at (its
+    ``.git`` is a FILE, not a directory) and is kept; a sample's source is
+    tracked by the repository the benchmark itself lives in.
+    """
+    if (path / '.git').exists():
+        return True
+    r = subprocess.run(['git', '-C', str(path.parent), 'ls-files', '--',
+                        path.name], capture_output=True, text=True)
+    return bool(r.stdout.strip())
+
+
+def _checkouts_in(folder: Path) -> list:
+    """The working trees *folder* holds: itself, or its directories."""
+    if (folder / '.git').exists():
+        return [folder]
+    return [c for c in sorted(folder.iterdir()) if (c / '.git').exists()]
+
+
+def _restore_checkout(root: Path) -> None:
+    """Put a checkout back to what git brought, submodules included.
+
+    ``clean -fdx``, never a bare ``clean -f``: this tool's artifacts beside a
+    project are IGNORED files, and a bare form leaves ignored files alone —
+    measured, it removed the untracked-but-not-ignored ones and left exactly
+    the artifacts wanted gone.
+
+    The superproject's reset does not descend into its submodules (measured: a
+    file modified inside one survived ``reset --hard`` + ``clean -fdx`` at the
+    top), so the same pair is run in each through ``foreach --recursive``.
+    """
+    print(f'  restore {_short(root)}')
+    for argv in (['reset', '--hard'], ['clean', '-fdx']):
+        subprocess.run(['git', '-C', str(root), *argv],
+                       capture_output=True, text=True)
+    subprocess.run(['git', '-C', str(root), 'submodule', 'foreach',
+                    '--recursive', 'git reset --hard && git clean -fdx'],
+                   capture_output=True, text=True)
+
+
+def _restore_tracked(path: Path) -> None:
+    """Put a tracked file back to HEAD — the same promise the checkouts get.
+
+    A benchmark folder can hold a tracked file the flow might have patched
+    (a sample's own declaration).  Leaving a modification there would let the
+    next run's `check` find its own earlier work and call the op applied,
+    which is the same "the cleanup consumed its own output" failure in a
+    smaller place.
+    """
+    subprocess.run(['git', '-C', str(path.parent), 'checkout', '--', path.name],
+                   capture_output=True, text=True)
+
+
+def cmd_wipe(args: list[str]) -> int:
+    """Return a benchmark folder to its ORIGINAL state: what git brought.
+
+    Nothing the flow produced survives — not the protocol or the plan (which
+    are regenerated), and not the per-project research results either (the
+    build-failure ops, the facts a program needs to run, the comparison rules,
+    the test driver).  Those are derived FOR the project, so a regression that
+    keeps them is not re-deriving anything: it is re-running a written-down
+    answer, and it cannot tell a flow that still derives it from one that has
+    forgotten how.  Re-deriving is the whole point of a regression.
+
+    What stays is therefore decided by two questions, both answered by the
+    flow's own machinery rather than by a list of names:
+
+      * is it the project? — ``tree_of`` is the flow's own answer to "which
+        directory is this project", and it is kept even when git brought
+        nothing there (measured: one corpus checkout has no ``.git`` at all);
+      * did git bring it? — a working tree of its own, or a path tracked by
+        an enclosing repository.  Those are RESTORED to HEAD, submodules
+        included, which is what a fresh clone would have produced.
+
+    Everything else is removed.  ``.git`` itself is always kept — it is the
+    repository, not a path inside it.
     """
     if not args:
         print('usage: bench.py wipe DIR...', file=sys.stderr)
@@ -107,17 +182,23 @@ def cmd_wipe(args: list[str]) -> int:
         if not d.is_dir():
             print(f'{d} is not a directory', file=sys.stderr)
             return 1
-        for base in {d, tree_of(d)}:
-            for name in GENERATED_FILES:
-                p = base / name
-                if p.is_file():
-                    print(f'  rm {_short(p)}')
-                    p.unlink()
-            for name in GENERATED_DIRS:
-                for p in sorted(base.rglob(name)):
-                    if p.is_dir() and '.git' not in p.parts:
-                        print(f'  rm -r {_short(p)}')
-                        _rmtree(p)
+        # 1. What git brought, back to what git brought.
+        keep = {tree_of(d).resolve()}
+        for c in _checkouts_in(d):
+            _restore_checkout(c)
+            keep.add(c.resolve())
+        # 2. Everything git does not own goes.
+        for child in sorted(d.iterdir()):
+            if child.resolve() in keep or child.name == '.git':
+                continue
+            if _git_brought(child):
+                _restore_tracked(child)
+                continue
+            print(f'  rm {_short(child)}')
+            if child.is_dir():
+                _rmtree(child)
+            else:
+                child.unlink()
     return 0
 
 

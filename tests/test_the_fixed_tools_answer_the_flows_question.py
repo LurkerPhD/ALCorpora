@@ -13,8 +13,10 @@ while writing it:
     checkout whose build files sit a level down with no marker at the top
     (a hand-written make project). It now delegates, and the delegation is
     asserted against the owner.
-  * `wipe` must remove this tool's output and NOT the project's — its
-    sources, its build files, and the declarations it ships about itself.
+  * `wipe` must return a checkout to what GIT brought, and remove everything
+    else — including the per-project declarations. Keeping those was the
+    older contract and it made a "regression" replay a written-down answer
+    instead of re-deriving it, so the cleanup consumed its own output.
 """
 
 from __future__ import annotations
@@ -77,52 +79,108 @@ def test_tree_is_printed_for_a_script():
 
 # ── wipe: this tool's output, never the project's ─────────────
 
-def test_wipe_removes_output_and_keeps_the_material(tmp_path: Path):
-    bench = _load()
-    d = tmp_path / '001-x'
+def _checkout(tmp_path: Path, name: str = '001-x') -> Path:
+    """A real repository: what wipe treats as "what git brought"."""
+    d = tmp_path / name
     (d / 'source').mkdir(parents=True)
-    (d / 'source' / 'a.c').write_text('int main(void){return 0;}\n')
     (d / 'CMakeLists.txt').write_text('project(x)\n')
-    # This tool's output, and the project's OWN declarations.
+    (d / 'source' / 'a.c').write_text('int main(void){return 0;}\n')
+    (d / '.gitignore').write_text('protocol.json\nverification_plan.json\n'
+                                  'build/\n')
+    for argv in (['init', '-q', '.'], ['add', '-A'],
+                 ['-c', 'user.email=t@t', '-c', 'user.name=t',
+                  'commit', '-qm', 'i']):
+        subprocess.run(['git', *argv], cwd=str(d), capture_output=True)
+    return d
+
+
+def test_wipe_returns_a_checkout_to_what_git_brought(tmp_path: Path):
+    """Everything git did not bring goes — the declarations included.
+
+    The declarations are what the flow RESEARCHED for this project (the ops
+    that made its build work, the facts a program needs before it runs, the
+    comparison rules, the test driver). A regression that keeps them is not
+    re-deriving anything, so they are removed with the rest of the output.
+    """
+    bench = _load()
+    d = _checkout(tmp_path)
     for name in ('protocol.json', 'verification_plan.json'):
         (d / name).write_text('{}')
     for name in ('origin_release', 'benchmark_results', '.work'):
         (d / name).mkdir()
         (d / name / 'junk').write_text('generated')
-    for name in ('facts.json', 'declaration.json', 'admit.json'):
+    # The research results, and a build state that is nobody's tracked file.
+    for name in ('facts.json', 'declaration.json', 'prepare-ops.json',
+                 'native-verify.sh'):
         (d / name).write_text('{}')
+    (d / 'build').mkdir()
+    (d / 'build' / 'CMakeCache.txt').write_text('cache\n')
 
     assert bench.cmd_wipe([str(d)]) == 0
 
-    for name in ('protocol.json', 'verification_plan.json'):
-        assert not (d / name).exists(), f'{name} is this tool\'s output'
-    for name in ('origin_release', 'benchmark_results', '.work'):
-        assert not (d / name).exists(), f'{name} is this tool\'s output'
-    for name in ('facts.json', 'declaration.json', 'admit.json',
-                 'CMakeLists.txt', 'source/a.c'):
-        assert (d / name).exists(), (
-            f'{name} is the MATERIAL a re-derivation consumes, or the '
-            f'project itself — wipe must not touch it')
+    for name in ('protocol.json', 'verification_plan.json', 'facts.json',
+                 'declaration.json', 'prepare-ops.json', 'native-verify.sh',
+                 'origin_release', 'benchmark_results', '.work', 'build'):
+        assert not (d / name).exists(), (
+            f'{name} is not git-brought, so wipe must remove it')
+    for name in ('CMakeLists.txt', 'source/a.c', '.gitignore'):
+        assert (d / name).exists(), f'{name} is what git brought — it stays'
 
 
-def test_wipe_does_not_touch_a_build(tmp_path: Path):
-    """Clearing a build belongs to `admit.py --readmit`, which knows how.
+def test_wipe_restores_a_tracked_file_it_was_pointed_at(tmp_path: Path):
+    """The sources survive because git RESTORES them, not because of a list.
 
-    Pinned because a reimplementation is exactly what broke a make project:
-    its `tree_subdir` names where its Makefiles ARE, so "remove tree_subdir"
-    removes the source.
+    This is the case the older warning was about: a hand-written make
+    project's `tree_subdir` names where its Makefiles ARE, so a wipe that
+    "removes the tree" removes the source. Asking git cannot do that — a
+    tracked file is put back to HEAD.
     """
     bench = _load()
-    d = tmp_path / '001-x'
-    d.mkdir()
-    (d / 'CMakeLists.txt').write_text('project(x)\n')
-    build = d / 'build'
-    build.mkdir()
-    (build / 'CMakeCache.txt').write_text('cache\n')
+    d = _checkout(tmp_path)
+    (d / 'source' / 'a.c').write_text('// clobbered by a build or a patch\n')
 
     assert bench.cmd_wipe([str(d)]) == 0
-    assert (build / 'CMakeCache.txt').exists(), (
-        'the build is not this command\'s to clear')
+    assert (d / 'source' / 'a.c').read_text() == 'int main(void){return 0;}\n', (
+        'a tracked file is restored to HEAD, not deleted with the output')
+
+
+def test_wipe_clears_a_build_inside_a_submodule(tmp_path: Path):
+    """A build inside a submodule goes too — the superproject does not see it.
+
+    Measured: `git reset --hard` + `git clean -fdx` at the top of a
+    superproject leaves a modified file inside its submodule untouched, so
+    `submodule foreach --recursive` runs the same pair in each.
+    """
+    bench = _load()
+    lib = tmp_path / 'lib'
+    lib.mkdir()
+    (lib / 'f.c').write_text('int f(void){return 0;}\n')
+    for argv in (['init', '-q', '.'], ['add', '-A'],
+                 ['-c', 'user.email=t@t', '-c', 'user.name=t',
+                  'commit', '-qm', 'i']):
+        subprocess.run(['git', *argv], cwd=str(lib), capture_output=True)
+    d = tmp_path / '001-x'
+    d.mkdir()
+    (d / '.gitignore').write_text('vendor/build/\n')
+    for argv in (['init', '-q', '.'],
+                 ['-c', 'protocol.file.allow=always', 'submodule', 'add',
+                  '-q', str(lib), 'vendor'],
+                 ['add', '-A'],
+                 ['-c', 'user.email=t@t', '-c', 'user.name=t',
+                  'commit', '-qm', 'i']):
+        subprocess.run(['git', *argv], cwd=str(d), capture_output=True)
+    subprocess.run(['git', '-C', str(d), '-c', 'protocol.file.allow=always',
+                    'submodule', 'update', '--init', '--recursive'],
+                   capture_output=True)
+    (d / 'vendor' / 'f.c').write_text('// dirty\n')
+    (d / 'vendor' / 'build').mkdir()
+    (d / 'vendor' / 'build' / 'o.o').write_text('object\n')
+
+    assert bench.cmd_wipe([str(d)]) == 0
+    assert (d / 'vendor' / 'f.c').read_text() == 'int f(void){return 0;}\n', (
+        'a file changed inside a submodule is restored')
+    assert not (d / 'vendor' / 'build').exists(), (
+        'a build inside a submodule is not git-brought, so it goes')
 
 
 # ── plan: validate, and say which modes are declared ──────────
