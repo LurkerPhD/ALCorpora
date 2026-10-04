@@ -28,3 +28,6 @@ benchmark/*/benchmark_results/
 # THIS checkout rather than part of the language-agnostic repo.  It stays on
 # disk and is run from here; `CLAUDE.md` says what it is for.
 regress.sh
+
+# 012's prepare ops and verify driver, written by regress.sh (outside benchmark/ so wipe leaves them)
+.corpus-012/
