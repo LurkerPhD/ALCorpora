@@ -110,14 +110,101 @@ def test_the_same_day_caveat_is_stated(tmp_path: Path):
     assert 'SAME CALENDAR DAY' not in volatiles.report(a, b, same_day=False)
 
 
-def test_clock_shift_is_optional_and_reports_itself(tmp_path: Path):
-    """`libfaketime` answers "what changes on another day"; its absence is not
-    an error, but it must not be silent either."""
+def test_the_clock_shift_is_a_timezone_literal():
+    """The shift is `TZ`, and it needs nothing installed.
+
+    `TZ` is a standard environment variable, and the two values are POSIX
+    LITERALS rather than `Continent/City` names — a name is resolved through
+    the system timezone database and fails where that database is absent,
+    while a literal is parsed by libc itself. Measured: the two literals put
+    two runs of one program on different calendar days, and moved exactly the
+    date and run-stamp lines.
+
+    This is also a self-containment property, which is why it is pinned: the
+    tool is meant to be run by other people on other machines, so a shift
+    that needed a package (`libfaketime`, the earlier version) would be
+    unavailable exactly where it is needed.
+    """
     shifted = volatiles.clock_shifted({})
-    if shifted:
-        assert 'LD_PRELOAD' in shifted
-    else:
-        assert shifted == {}, (
-            'no faketime means an empty env, never a half-applied one')
-    assert volatiles.shifted_stamp() == '+1y', (
-        'a year, so a line printing only the year moves too')
+    assert shifted['TZ'] == volatiles.SHIFTED_TZ
+    assert 'LD_PRELOAD' not in shifted, (
+        'the shift must not depend on a preloaded library')
+    assert volatiles.SHIFTED_TZ != volatiles.REAL_TZ
+
+    # The literals parse with no database present, and differ by more than a
+    # day. Both halves matter: a name would still "not raise" here on a
+    # machine that has tzdata, so the assertion is on the OFFSET.
+    def offset_hours(tz: str) -> float:
+        import subprocess
+        env = {'TZ': tz, 'PATH': '/usr/bin:/bin'}
+        r = subprocess.run(['date', '+%z'], env=env,
+                           capture_output=True, text=True)
+        z = r.stdout.strip()
+        return int(z[:3]) + int(z[3:]) / 60.0 if z else 0.0
+
+    delta = offset_hours(volatiles.SHIFTED_TZ) - offset_hours(volatiles.REAL_TZ)
+    assert abs(delta) >= 24, (
+        f'the two literals must be more than a day apart, got {delta}h')
+
+
+def test_only_undeclared_movements_are_reported(tmp_path: Path):
+    """The diff must say what is ALREADY covered, not re-hand the whole set.
+
+    Handing an agent every moving line makes it re-derive rules the plan
+    already has — the "answer as a delta" failure in another guise. So the
+    plan's own rules are applied first, and what survives is what a rule still
+    has to account for. A `mask` counts as coverage too: it is asked by
+    RUNNING the declared rules over the pair, not by matching patterns by eye,
+    because a mask that only moves part of a line is coverage the rule itself
+    decides.
+    """
+    from protocolize.volatiles import declared_modes, uncovered, is_covered
+
+    a, b = tmp_path / 'a', tmp_path / 'b'
+    _run(a, 'c1', [' DATE: 10/ 3/26', ' RESULT 1.5 ELAPSED 3:55:16',
+                   ' UNSTABLE 42'])
+    _run(b, 'c1', [' DATE: 10/ 4/26', ' RESULT 1.5 ELAPSED 3:55:19',
+                   ' UNSTABLE 99'])
+
+    class _Plan:
+        assertions = [{'kind': 'text_lockstep',
+                       'drop': [r'^\s*DATE:'],
+                       'mask': [[r'ELAPSED \S+', 'ELAPSED <t>']]}]
+
+    modes = declared_modes(_Plan)
+    assert modes == (['^\\s*DATE:'], [], [[r'ELAPSED \S+', 'ELAPSED <t>']])
+
+    assert is_covered(' DATE: 10/ 3/26', ' DATE: 10/ 4/26', modes)
+    assert is_covered(' RESULT 1.5 ELAPSED 3:55:16',
+                      ' RESULT 1.5 ELAPSED 3:55:19', modes), (
+        'a mask that fixes the clock leaves the RESULT still compared — so '
+        'the pair is covered')
+    assert not is_covered(' UNSTABLE 42', ' UNSTABLE 99', modes)
+
+    left = uncovered(a, b, modes)
+    shapes = ' '.join(v.shape for v in left)
+    assert 'UNSTABLE' in shapes, 'the undeclared movement must be reported'
+    assert 'DATE' not in shapes and 'ELAPSED' not in shapes, (
+        'declared movements must NOT be handed back as work to do')
+
+
+def test_a_mask_that_ignores_the_judged_part_does_not_hide_a_real_diff(tmp_path):
+    """Coverage must follow the rule, not the pattern's presence.
+
+    A mask on the clock column covers the clock and NOTHING ELSE: if the
+    judged number moves too, the pair is NOT covered, however much the line
+    otherwise looks handled.
+    """
+    from protocolize.volatiles import uncovered
+
+    a, b = tmp_path / 'a', tmp_path / 'b'
+    _run(a, 'c1', [' STEP 4 RESULT 1.5 ELAPSED 3:55:16'])
+    _run(b, 'c1', [' STEP 4 RESULT 9.9 ELAPSED 3:55:16'])
+
+    class _Plan:
+        assertions = [{'mask': [[r'ELAPSED \S+', 'ELAPSED <t>']]}]
+
+    from protocolize.volatiles import declared_modes
+    left = uncovered(a, b, declared_modes(_Plan))
+    assert left, ('the RESULT moved and the mask does not touch it, so this '
+                  'is NOT covered')

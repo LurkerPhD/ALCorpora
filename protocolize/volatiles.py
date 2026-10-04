@@ -78,7 +78,7 @@ def _golden_files(root: Path) -> dict[Path, Path]:
     return out
 
 
-def clock_shifted(env: 'dict | None') -> dict:
+def clock_shifted(env: 'dict | None' = None) -> dict:
     """An environment in which the run happens on a DIFFERENT DAY.
 
     Two runs made in the same minute are blind to every line whose value comes
@@ -86,41 +86,41 @@ def clock_shifted(env: 'dict | None') -> dict:
     volatile, and a comparison rule built from that diff will accept a stale
     one. Measured on a corpus whose reports carry `DATE: 10/ 3/26` and a run
     stamp: those lines MUST be dropped, and a same-day pair says they are fine.
+    Measured again, on that same corpus, that `TZ` moves exactly those lines:
+    the same deck run at `Etc/GMT+12` printed `DATE: 10/ 3/26` and at
+    `Pacific/Kiritimati` printed `DATE: 10/ 4/26`.
 
-    `libfaketime` answers exactly this question, so it is used when it is
-    installed. It is an OPTIONAL dependency and its absence is not an error —
-    the diff is simply weaker, and `report` says so — because requiring it
-    would make the whole mechanism unavailable on a machine that lacks it.
+    The shift is `TZ`, and NOTHING ELSE. A timezone is a standard environment
+    variable every machine has, and the two offsets are plain POSIX literals
+    (`XXX+12` / `XXX-14`) that name no file — so this needs no package, no
+    root, and no timezone database, which is what "self-contained" has to mean
+    for a tool other people run. An earlier version used `libfaketime`, which
+    is a package to install and a shared object to locate, and it is gone.
+
+    The one limit, stated rather than hidden: a POSIX `TZ` offset is clamped
+    by libc to 24 hours, so this moves a DAY and not a year. A line printing
+    only a YEAR will therefore agree on both sides and stay invisible here —
+    the same lower-bound caveat as everything else in this module, and the
+    reason `report` tells the reader to check the project's own rules too.
     """
     import os
-    import shutil
-    if not shutil.which('faketime'):
-        return {}
-    # A day and a year away from the real clock, so the date, the year and any
-    # elapsed-time arithmetic all move together.
-    out = dict(env or os.environ)
-    out['LD_PRELOAD'] = _faketime_lib() or out.get('LD_PRELOAD', '')
-    return out if out.get('LD_PRELOAD') else {}
+    out = dict(os.environ if env is None else env)
+    out['TZ'] = SHIFTED_TZ
+    return out
 
 
-def _faketime_lib() -> str:
-    import glob
-    for pat in ('/usr/lib/*/faketime/libfaketime.so.1',
-                '/usr/lib/faketime/libfaketime.so.1',
-                '/usr/local/lib/faketime/libfaketime.so.1'):
-        hits = glob.glob(pat)
-        if hits:
-            return hits[0]
-    return ''
+#: A POSIX TZ literal two extremes apart (~26 hours, so a run at each lands on
+#: a different calendar day).  Written as the literal rather than a
+#: `Continent/City` name on purpose: a NAME is resolved through the system
+#: timezone database and fails where that database is absent, while the
+#: literal is parsed by libc itself and works everywhere.
+SHIFTED_TZ = 'XXX-14'
+REAL_TZ = 'XXX+12'
 
 
 def shifted_stamp() -> str:
-    """The faketime spec: the same wall clock, one full year later.
-
-    A year rather than a day, so a line printing only the year moves too —
-    and so an elapsed-time computation that spans the new year still runs.
-    """
-    return '+1y'
+    """A name for the shift, for a report to print."""
+    return SHIFTED_TZ
 
 
 def between(root_a: Path, root_b: Path, *, limit: int = 60) -> list[Volatile]:
@@ -195,3 +195,193 @@ def report(root_a: Path, root_b: Path, *, same_day: bool = True) -> str:
             'derived from the calendar will have kept them stable — read the '
             'project\'s own comparison rules for those, and drop them.')
     return '\n'.join(lines)
+
+
+# ── declared coverage ─────────────────────────────────────────
+
+def declared_modes(plan) -> tuple:
+    """The `drop`/`keep`/`mask` a plan ALREADY declares, as raw pattern lists.
+
+    A diff is only useful to its reader if it says which of the moving lines
+    are ALREADY accounted for.  A shape the plan already drops is not news and
+    must not be presented as if it were — the whole point of handing this to
+    an agent is that the agent fills in the REMAINING rules, not the whole
+    set again.
+    """
+    drop: list = []
+    keep: list = []
+    mask: list = []
+    for a in (getattr(plan, 'assertions', None) or []):
+        if not hasattr(a, 'get'):
+            continue
+        drop += list(a.get('drop') or [])
+        keep += list(a.get('keep') or [])
+        mask += list(a.get('mask') or [])
+    return drop, keep, mask
+
+
+def is_covered(a_line: str, b_line: str, modes: tuple) -> bool:
+    """Whether the plan's declared rules already make these two lines equal.
+
+    Asked by RUNNING the rules over the pair rather than by matching patterns
+    by eye: a `mask` that only moves part of a line, or a `drop` that happens
+    to match, are both answers the rule itself gives, and re-deriving them
+    here would be a second implementation that can disagree with the first.
+    """
+    from protocolize.verify import compare
+    drop, keep, mask = modes
+    if not (drop or keep or mask):
+        return False
+    na = compare.normalize(a_line, drop, keep, mask)
+    nb = compare.normalize(b_line, drop, keep, mask)
+    return na == nb
+
+
+def uncovered(root_a: Path, root_b: Path, modes: tuple,
+              *, limit: int = 40) -> list:
+    """Line shapes that differ between two runs AND are not yet declared.
+
+    The same measurement as `between`, with the plan's own rules applied
+    first: what survives is what an agent still has to write a rule for.
+    """
+    a, b = _golden_files(Path(root_a)), _golden_files(Path(root_b))
+    by_shape: dict[str, set] = {}
+    examples: dict[str, list] = {}
+    for rel in sorted(set(a) & set(b)):
+        try:
+            la = a[rel].read_text(errors='replace').splitlines()
+            lb = b[rel].read_text(errors='replace').splitlines()
+        except OSError:
+            continue
+        for x, y in zip(la, lb):
+            if x == y or is_covered(x, y, modes):
+                continue
+            sh = shape_of(x)
+            if shape_of(y) != sh:
+                sh = f'{shape_of(x)}  !=  {shape_of(y)}'
+            by_shape.setdefault(sh, set()).add(str(rel))
+            ex = examples.setdefault(sh, [])
+            if len(ex) < 2:
+                ex.append(f'{x.strip()[:70]!r} vs {y.strip()[:70]!r}')
+    ranked = sorted(by_shape.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    return [Volatile(shape=sh, cases=len(c), examples=tuple(examples[sh]))
+            for sh, c in ranked[:limit]]
+
+
+# ── the two runs ──────────────────────────────────────────────
+
+def capture_twice(plan, env, work_root: Path, *, shift_date: bool = False):
+    """Run the REFERENCE through *plan* twice; return the two golden roots.
+
+    The second run happens under a shifted `TZ` when *shift_date* is asked
+    for, which is what makes calendar-derived lines move.  The environment
+    reaches the child because `suite._run_process` runs it as
+    ``{**os.environ, **case.env}`` — so setting `TZ` here is enough, and no
+    part of the runner needs to know this exists.
+
+    Returns ``(root_a, root_b)``, the two runs' captured outputs.
+    """
+    import dataclasses
+    import os
+    import shutil
+    from protocolize.verify import suite as suite_mod
+
+    work_root = Path(work_root)
+    roots = []
+    for i, shift in enumerate((False, shift_date)):
+        dest = work_root / f'ref_{i}'
+        if dest.exists():
+            shutil.rmtree(dest)
+        sub = dataclasses.replace(env, origin=dest)
+        saved = None
+        if shift:
+            changed = clock_shifted()
+            saved = {k: os.environ.get(k) for k in changed}
+            os.environ.update(changed)
+        try:
+            n = suite_mod.ensure_reference(plan, sub)
+        finally:
+            if saved is not None:
+                for k, v in saved.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+        if n == 0:
+            raise RuntimeError(
+                f'reference run {i} captured nothing — the plan did not run')
+        roots.append(dest)
+    return roots[0], roots[1]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: measure which lines two runs disagree on, and which are declared.
+
+    Emits EVIDENCE for whoever writes the comparison rules — a human or an
+    agent. It does not decide the rules and does not run an agent itself: it
+    reports what MOVED and what is ALREADY covered, and stops.
+    """
+    import argparse
+    import sys
+    import tempfile
+    from protocolize.verification_plan import VerificationPlan
+    from protocolize.verify import cli as cli_mod
+
+    p = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
+    p.add_argument('build_dir',
+                   help='the build tree holding verification_plan.json')
+    p.add_argument('--tree', type=Path, default=None,
+                   help='the tree the plan runs in (default: the build dir)')
+    p.add_argument('--origin', type=Path, default=None,
+                   help='unused for the capture; kept for symmetry with the '
+                        'plan runner')
+    p.add_argument('--exe', '-x', type=Path, default=None)
+    p.add_argument('--shift-date', action='store_true',
+                   help='run the second capture under a shifted `TZ`, so '
+                        'calendar-derived lines move too')
+    p.add_argument('--keep', type=Path, default=None,
+                   help='keep the two captured trees here (for inspection)')
+    args = p.parse_args(argv)
+
+    build_dir = Path(args.build_dir).resolve()
+    plan = VerificationPlan.load(build_dir / 'verification_plan.json')
+    from protocolize.verify.cli import _plan_and_env
+    _, env = _plan_and_env(build_dir, args.origin, args.exe, None, args.tree)
+
+    work = Path(args.keep) if args.keep else Path(
+        tempfile.mkdtemp(prefix='volatiles-'))
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        root_a, root_b = capture_twice(plan, env, work,
+                                       shift_date=args.shift_date)
+        modes = declared_modes(plan)
+        left = uncovered(root_a, root_b, modes)
+    finally:
+        if not args.keep:
+            import shutil
+            shutil.rmtree(work, ignore_errors=True)
+
+    declared = sum(1 for m in modes if m)
+    print(f'two runs of {build_dir.name}: second '
+          f'{"shifted" if args.shift_date else "same day"}')
+    print(f'the plan declares {len(modes[0])} drop / {len(modes[1])} keep / '
+          f'{len(modes[2])} mask pattern(s)')
+    if not left:
+        print('NO undeclared differences: every line that moved is already '
+              'covered by the plan\'s own rules.')
+        return 0
+    print(f'{len(left)} line shape(s) moved and are NOT yet covered — these '
+          f'are what a rule still has to account for:')
+    for v in left:
+        print(v.render())
+    print('Treat each shape as evidence of a MECHANISM: several shapes naming '
+          'one thing move together. A fixed-width field that can SATURATE '
+          '(`I8` printing a value too wide for it, showing as `********`) '
+          'hides a difference rather than showing one, so a shape that looks '
+          'perfectly stable may still be moving underneath.')
+    return 0
+
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main())
