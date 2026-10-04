@@ -420,11 +420,12 @@ class Protocol:
     #: ``layout`` says whether the build ran in the source tree or beside it.
     capture: dict = field(default_factory=dict)
     #: Infrastructure the corpus needs ONCE for the repeated builds and runs
-    #: that follow -- a `git submodule` fetch, a portability patch, an overlay
-    #: copy.  Each op carries a CHECK (the corpus's own way of telling it is
-    #: already done), so it runs AT MOST ONCE and a repeat is a no-op; the
-    #: build is reproducible from a raw checkout without paying for the setup
-    #: on every build.  Empty when the corpus needs none.
+    #: that follow -- a portability patch, an overlay copy.  Each op carries a
+    #: CHECK (the corpus's own way of telling it is already done), so it runs
+    #: AT MOST ONCE and a repeat is a no-op; the build is reproducible from a
+    #: raw checkout without paying for the setup on every build.  Empty when
+    #: the corpus needs none.  Submodules are NOT here: fetching them is part
+    #: of fetching the checkout, so it has happened before any of this runs.
     prepare: list[dict] = field(default_factory=list)
     #: Build facts a compile database cannot carry: the optimization level
     #: the CONVERTED code is built at (which may differ from the source's),

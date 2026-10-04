@@ -1139,46 +1139,24 @@ def capture_build(proto: Protocol, tree_root: Path | str, *,
 def capture_prepare(*, declared: 'list[dict] | None' = None) -> list[dict]:
     """The ``prepare`` section: what the corpus needs ONCE, checked each time.
 
-    TWO kinds of op, and only one of them needs anyone to look at the project.
+    The list is ENTIRELY declared, and that is the point: a prepare op is a
+    portability patch the corpus needs in order to build at all, which is a
+    delta between the shipped source and a buildable one.  Nothing in the
+    shipped source states it, so nothing here can derive it — the ops arrive
+    from the caller and are carried through with their checks intact.
 
-    **Submodules are ONE fixed op, not one per submodule.**  The command that
-    fetches them all is ``git submodule update --init --recursive``; git walks
-    its own roster, so enumerating the roster here would only be a second copy
-    of it.  And per-submodule ops were not merely redundant — each one's
-    ``check`` was ``{"path": <dir>}``, and a submodule that has NOT been
-    initialized still leaves its directory BEHIND, EMPTY.  Measured: the check
-    therefore reported "already applied" for exactly the state the op exists
-    to fix, the op never ran, and the build then failed on a missing
-    directory — reported as the project's problem.
-
-    So the op is unconditional and the CHECK carries the whole decision, told
-    by git itself (``-`` uninitialized, ``+`` wrong commit, ``U`` conflict):
-
-        check: no `.git` here (nothing to do) OR git reports no such submodule
-        run:   git submodule update --init --recursive
-
-    That is correct for a git checkout with submodules, a git checkout without
-    them (the command is a no-op), and a tree that is not a checkout at all
-    (where running it would fail with exit 128).  Measured on all three.
-
-    The other kind CANNOT be derived, because it is not in the tree: a
-    portability patch the corpus needs in order to build at all is a delta
-    between the shipped source and a buildable one, and nothing in the shipped
-    source states it.  Those arrive as *declared* ops and are carried through
-    with their checks intact rather than re-derived.
-
-    Order is preserved: `declared` first, then the submodule op — a patch that
-    has to land before a submodule is fetched keeps its place.
+    **Submodules are NOT a prepare op.**  They used to be derived here as one
+    fixed ``git submodule update --init --recursive`` op, and that was the
+    wrong place on both counts: the fetch has already run it by the time this
+    is called (see the fetching step), so the op could only ever report
+    "already done" — and its check had to exist at all only because the op
+    might not have run.  Fetching a checkout's submodules is part of fetching
+    the checkout, so it happens there, once, unconditionally; a tree that
+    vendors nothing makes the command a no-op (measured: 17 ms) and needs no
+    gate.  What remains for `prepare` is the ops only a reader of the project
+    can name.
     """
-    ops: list[dict] = [dict(op) for op in (declared or ())]
-    ops.append({
-        'op': 'submodules',
-        'check': ('test ! -e .git || '
-                  'test -z "$(git submodule status --recursive 2>/dev/null '
-                  '| grep "^[-+U]")"'),
-        'run': 'git submodule update --init --recursive',
-    })
-    return ops
+    return [dict(op) for op in (declared or ())]
 
 
 def gitmodules_paths(project_root: Path | str) -> list[str]:
@@ -1572,8 +1550,8 @@ def extract_protocol(build_dir: Path | str, *,
     defaults to what each backend's own layout implies.
 
     *prepare* is the corpus's declared one-time infrastructure that the tree
-    cannot state (a portability patch); the submodule ops are derived from
-    *project_root*'s own ``.gitmodules`` and appended.
+    cannot state (a portability patch).  Submodules are NOT here: fetching
+    them belongs to fetching the checkout, which has already happened.
 
     *cfg* supplies the two DECLARATIONS the `build` section carries and no
     recorded command does: the policy flags applied to every unit and the

@@ -111,13 +111,6 @@
   "build": {},
   "prepare": [
     {
-      "op": "submodule",
-      "check": {
-        "path": "submodules/lib"
-      },
-      "run": "git submodule update --init submodules/lib"
-    },
-    {
       "_README": [
         "A PATCH op: a change the source needs to build on THIS platform/",
         "toolchain, written so a fresh checkout reproduces it and a repeat pays",
@@ -125,7 +118,9 @@
         "there; `run` applies it. MEASURED on a real project: its Makefile",
         "spelled target paths with backslashes (Windows) and its 1970s Fortran",
         "used a dialect today's gfortran rejects -- both are prepare ops, so the",
-        "recorded protocol rebuilds from a clean checkout."
+        "recorded protocol rebuilds from a clean checkout.",
+        "Submodules are NOT a prepare op: fetching them is part of fetching the",
+        "checkout, which has already run by the time this list is used."
       ],
       "op": "patch",
       "check": {
@@ -205,6 +200,6 @@
   "_own_roots": "The tree-relative directories that are the project's OWN units, when its build pulls in third-party subprojects. Empty [] means every compiled unit is the project's.",
   "_tests": "The build system's OWN test registrations, as it reports them (ctest --show-only=json-v1). A replay re-registers them so the built tree is RUNNABLE the way the project runs it. Empty [] when none.",
   "_support_files": "Files a run READS that are neither compiled nor generated, carried as CONTENT. Empty [] when none.",
-  "_prepare": "Infrastructure the project needs ONCE (a submodule fetch, a patch, an overlay). Each carries a `check` so it runs AT MOST ONCE. Empty [] when none. Each op is IDEMPOTENT: it carries a `check` (a shell line, or a `{path, exists}` predicate) that exits 0 when it is already done. Ops that patch the source are how a project that needs a platform/toolchain fix stays reproducible.",
+  "_prepare": "Infrastructure the project needs ONCE (a portability patch, an overlay copy). Each carries a `check` so it runs AT MOST ONCE. Empty [] when none. Each op is IDEMPOTENT: it carries a `check` (a shell line, or a `{path, exists}` predicate) that exits 0 when it is already done. Ops that patch the source are how a project that needs a platform/toolchain fix stays reproducible.",
   "_build": "Toolchain-specific extras a CONSUMER may read (an optimization remap, module/include directories, policy flags). All OPTIONAL; {} for a project that declares none. NOTHING in this tool branches on them."
 }

@@ -98,7 +98,8 @@ ADMIT_ONE_PROJECT(source):
     # [PY] 一次调用;以下整条管线都是确定性的
     P1  调用:  python3 bench.py {fetch <source> | admit <dir>} <args...>
     P2  n, dest = 最小空缺编号, benchmark/{n:03d}-{name}
-    P3  fetch(source -> dest/inner)              # clone/copy,带重试
+    P3  fetch(source -> dest/inner)              # clone/copy,带重试;submodule
+                                                 # 随取源一起检查并拉取
     P4  src = inner_source(dest)                 # 按"它持有什么"选,不按名字
         clear_previous_build(src, tree_subdir)   # 仅重证时;in-source 不删目录
 
@@ -170,7 +171,11 @@ A12 JUDGE_B_FLAT(printed):
   证明);`admit` 是重证一个已在 `benchmark/` 里的。合成一个命令,流程就只有一份定义。
 * **P2** 编号与目标目录 —— 最小空缺编号就是准入顺序,目录是 `benchmark/<NNN>-<name>`。
 * **P3** 取源 —— 浅 clone(带重试,链路不稳)或本地拷贝。失败的拷贝会留下**空目录**,
-  必须删掉,否则它白白占掉一个编号却不是项目。
+  必须删掉,否则它白白占掉一个编号却不是项目。**submodule 随取源一起进来**:
+  取源没拿到 submodule 就不算取完,所以这一步先查树里有没有 vendored 依赖,
+  有才执行 update,再查一次,直到 git 报告它们到位为止 —— 没有 submodule 的树
+  一分钱不花。放到后面任何地方都只是把同一条命令挪到更差的位置:它会变成"要诊断的
+  症状",而不是"取源的一部分"。
 * **P4** 找到树、清上次构建 —— 树是**持有一个构建系统**的那个目录(绝不按名字)。
   out-of-source 的构建目录整个删;in-source 的只删构建系统生成的状态,**绝不删源码**。
 * **P5** 应用 prepare ops —— agent 诊断出来的补丁,每条 `{op, check, run}` 且幂等:

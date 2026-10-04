@@ -105,6 +105,70 @@ class FetchError(RuntimeError):
     """The source could not be fetched."""
 
 
+def _submodule_report(dest: Path) -> 'str | None':
+    """git's own account of *dest*'s submodules, or None if it is not a checkout.
+
+    `.git` is tested FIRST because git discovers repositories by walking UP:
+    a copied plain directory that happens to sit inside some other repository
+    would otherwise answer with ITS parent's submodules — and the update below
+    would then run against the wrong tree.
+    """
+    if not (dest / '.git').exists():
+        return None
+    r = subprocess.run(['git', 'submodule', 'status', '--recursive'],
+                       cwd=str(dest), capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _outstanding(report: str) -> list[str]:
+    """The submodules git says are NOT in place.
+
+    `git submodule status` marks them: ``-`` never initialized, ``+`` at the
+    wrong commit, ``U`` in conflict.  A submodule that IS in place is prefixed
+    with a space — so the filesystem must not be asked instead, because an
+    uninitialized submodule leaves its directory behind, EMPTY (measured), and
+    "the directory exists" is true for exactly the state this detects.
+    """
+    return [l for l in report.splitlines() if l[:1] in '-+U']
+
+
+def _fetch_submodules(dest: Path, *, retries: int = 3) -> None:
+    """Bring a checkout's submodules in — the LAST thing fetching does.
+
+    A checkout that vendors libraries is not fetched until its submodules are,
+    so this belongs here and nowhere else: anywhere later (the build step, a
+    prepare op) the same command would arrive as something to diagnose rather
+    than as part of the checkout, and a build failing on a missing directory
+    names the symptom instead of the fetch that should have brought it.
+
+    Nothing is asked of a tree that does not declare submodules: a non-checkout
+    has no ``.git``, and a checkout with nothing vendored reports nothing, so
+    both return before any command runs.  Where there IS something to bring in,
+    the check is git's own report, and it is repeated after each attempt —
+    a partial fetch over a flaky link leaves the rest outstanding, and the
+    second attempt picks up what the first missed.  An update that does not
+    settle it after *retries* attempts raises rather than handing the build a
+    directory that was never filled.
+    """
+    report = _submodule_report(dest)
+    if report is None or not report.strip():
+        return
+    for attempt in range(1, retries + 1):
+        out = _outstanding(report)
+        if not out:
+            return
+        print(f'  submodules: {len(out)} outstanding, fetching '
+              f'(attempt {attempt}/{retries})', file=sys.stderr)
+        subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'],
+                       cwd=str(dest), capture_output=True, text=True)
+        report = _submodule_report(dest) or ''
+    out = _outstanding(report)
+    if out:
+        raise FetchError(
+            f'submodules still not in after {retries} attempts: '
+            + ', '.join(l.split()[-1] for l in out))
+
+
 def fetch(source: str, dest: Path, *, retries: int = 3) -> None:
     """Put the source at *dest*: clone a URL, copy a local path.
 
@@ -112,6 +176,9 @@ def fetch(source: str, dest: Path, *, retries: int = 3) -> None:
     error: The TLS connection was non-properly terminated`), so a URL is
     retried before giving up — and giving up RAISES with the reason rather
     than crashing with a traceback.
+
+    **Submodules come with it** (see :func:`_fetch_submodules`): checked,
+    fetched if outstanding, re-checked, and only then is the fetch done.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     if source.startswith(('http://', 'https://', 'git@')) or \
@@ -124,21 +191,24 @@ def fetch(source: str, dest: Path, *, retries: int = 3) -> None:
                 ['git', 'clone', '--depth', '1', source, str(dest)],
                 capture_output=True, text=True)
             if r.returncode == 0:
-                return
+                break
             last = (r.stderr or r.stdout).strip()
             tail = last.splitlines()[-1] if last else '?'
             print(f'  clone attempt {attempt}/{retries} failed: {tail}',
                   file=sys.stderr)
-        raise FetchError(f'could not clone {source}: {last}')
-    try:
-        shutil.copytree(source, dest, symlinks=True)
-    except OSError as exc:
-        # The local-path half has to keep the same promise the clone half
-        # does.  Measured: a mistyped local path exited through a raw
-        # `FileNotFoundError` traceback, so the entry point's contract —
-        # exit 1 with the reason — was broken by the one branch that never
-        # got the treatment.
-        raise FetchError(f'could not copy {source}: {exc}') from exc
+        else:
+            raise FetchError(f'could not clone {source}: {last}')
+    else:
+        try:
+            shutil.copytree(source, dest, symlinks=True)
+        except OSError as exc:
+            # The local-path half has to keep the same promise the clone half
+            # does.  Measured: a mistyped local path exited through a raw
+            # `FileNotFoundError` traceback, so the entry point's contract —
+            # exit 1 with the reason — was broken by the one branch that never
+            # got the treatment.
+            raise FetchError(f'could not copy {source}: {exc}') from exc
+    _fetch_submodules(dest, retries=retries)
 
 
 def run(shell_line: str, cwd: Path) -> tuple[bool, str]:
@@ -172,23 +242,28 @@ def _prepare_done(op: dict, src: Path) -> bool:
 def native(src: Path, args) -> tuple[bool, str, list]:
     """Build and test the project the way IT builds — steps 1 and 2.
 
-    Returns ``(ok, log, prepare_ops)``. The prepare ops are the ones the
-    caller DECLARED (``--prepare``): this script does not invent a fix — a
-    build that fails is diagnosed by the SKILL, which researches the remedy
-    and hands it back as an idempotent op. That is where the "which fix"
-    judgement belongs, because it differs per project; here it is only run
-    and recorded.
+    Returns ``(ok, log, prepare_ops)`` — the ops the caller DECLARED
+    (``--prepare``), which is what the protocol records. This script does not
+    invent a FIX: a build that fails is diagnosed by the SKILL, which
+    researches the remedy and hands it back as an idempotent op.
+
+    Submodules are NOT handled here — they are part of fetching, so they are
+    already in by the time this runs (see `fetch`).
     """
     log = ''
-    remedies: list = list(getattr(args, 'prepare_ops', []) or [])
-    # APPLY the declared ops first, so the build runs on the prepared tree.
-    # A fresh checkout reproduces the build because each op carries a check
-    # and a `run`: `run` only fires when `check` says it is not done yet.
-    for op in remedies:
+    declared: list = list(getattr(args, 'prepare_ops', []) or [])
+    for op in declared:
         if _prepare_done(op, src):
             continue
         ok, out = run(op['run'], cwd=src)
         log += f'$ {op["run"]}\n{out[-1000:]}\n'
+        if not ok:
+            # A DECLARED op that failed is reported HERE, by name, and stops
+            # the run. Swallowing it sends the failure to whatever the build
+            # complains about next — a missing directory, a wrong flag — and
+            # that names the symptom instead of the preparation that was
+            # supposed to prevent it.
+            return False, log, declared
     for line in (args.configure, args.build, args.test):
         if not line:
             continue
@@ -196,8 +271,8 @@ def native(src: Path, args) -> tuple[bool, str, list]:
         ok, out = run(cmd, cwd=src)
         log += f'$ {cmd}\n{out[-2000:]}\n'
         if not ok:
-            return False, log, remedies
-    return True, log, remedies
+            return False, log, declared
+    return True, log, declared
 
 
 def _language(proto) -> str:

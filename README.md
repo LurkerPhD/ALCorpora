@@ -109,7 +109,8 @@ ADMIT_ONE_PROJECT(source):
     # [PY] one call; the whole pipeline below is deterministic
     P1  call:  python3 bench.py {fetch <source> | admit <dir>} <args...>
     P2  n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
-    P3  fetch(source -> dest/inner)              # clone/copy, with retries
+    P3  fetch(source -> dest/inner)              # clone/copy, retried; submodules
+                                                 # checked and fetched with it
     P4  src = inner_source(dest)                 # by what it HOLDS, not its name
         clear_previous_build(src, tree_subdir)   # re-prove only; in-source keeps the dir
 
@@ -185,7 +186,12 @@ A12 JUDGE_B_FLAT(printed):
   order, and the folder is `benchmark/<NNN>-<name>`.
 * **P3** fetch the source — a shallow clone (retried, links are flaky) or a
   local copy. A failed copy's EMPTY destination is removed, or it would
-  consume a number without being a project.
+  consume a number without being a project. **The submodules come with it**:
+  fetching is not done until they are, so this step checks whether the tree
+  vendors anything, runs the update only if it does, checks again, and
+  retries until git reports them in place — a checkout that vendors nothing
+  pays nothing. Doing it anywhere later would be the same command in a worse
+  place, arriving as something to diagnose instead of as part of the checkout.
 * **P4** find the tree, clear a previous build — the tree is whichever
   directory HOLDS a build system (never a name). An out-of-source build
   directory is removed whole; a build living among the sources has only the

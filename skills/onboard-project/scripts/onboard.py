@@ -125,10 +125,10 @@ def _parse(argv):
     ap.add_argument('--prepare', default=None,
                     help='JSON list of one-time prepare ops the TREE cannot '
                          'state (a portability patch the corpus needs to build '
-                         'at all).  Each op needs a `check` and a `run`; the '
-                         'submodule ops are derived from the project\'s own '
-                         '.gitmodules and appended, so they are not listed '
-                         'here.')
+                         'at all).  Each op needs a `check` and a `run`.  '
+                         'Submodules are NOT listed here: fetching them is '
+                         'part of fetching the checkout, and by the time this '
+                         'runs they are already in.')
     ap.add_argument('--build', default=None,
                     help='JSON object of the `build` DECLARATIONS no recorded '
                          'command carries (flags.optimize, flags.policy).  '
@@ -214,9 +214,9 @@ def main(argv=None) -> int:
 
     # Idempotent infrastructure, run once and skipped ever after.  It is
     # placed here, after the protocol, because that is where the full op list
-    # exists (the submodule ops are derived from the project during
-    # extraction) -- and because onboarding runs on an already-built tree the
-    # common outcome is that every check holds and nothing runs.
+    # exists (the declared ops are carried onto it during extraction) -- and
+    # because onboarding runs on an already-built tree the common outcome is
+    # that every check holds and nothing runs.
     base = (Path(args.project_root).resolve() if args.project_root
             else (tree.parent if tree.name == 'build' else tree))
     if proto.prepare:
