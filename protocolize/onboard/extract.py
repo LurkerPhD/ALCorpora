@@ -1607,15 +1607,68 @@ def _read(build: Path, tree_root: Path | str | None,
         return _read_ninja(build, tree_root, comment, project_root)
     from .make_extract import extract_make_protocol, make_directories
     if make_directories(build):
-        return extract_make_protocol(
-            build, tree_root=tree_root or build, comment=comment)
+        try:
+            return extract_make_protocol(
+                build, tree_root=tree_root or build, comment=comment)
+        except ExtractionError as exc:
+            # The backend CLAIMED the tree (it holds a Makefile) and then could
+            # not read it.  When the tree is a generated Makefile from another
+            # build system, the useful sentence is the one naming that system —
+            # measured: CMake's "Unix Makefiles" generator writes a Makefile
+            # whose link step is a `cmake -E cmake_link_script` call, so the
+            # backend sees wrapper commands and reports "no archive, no
+            # executable", which reads like a broken project.
+            if (build / 'CMakeCache.txt').is_file():
+                raise ExtractionError(
+                    f'{build} holds a Makefile that turns out to be generated '
+                    f'by another build system, not a hand-written one.  '
+                    f'{_what_the_tree_is(build)}  The build system behind it '
+                    f'is the authority: ask it for the commands rather than '
+                    f'reading the generated Makefile — but note this tool has '
+                    f'no backend for that generator, so this is a TOOL gap, '
+                    f'not a project problem.\n(underlying: {exc})') from exc
+            raise
     raise ExtractionError(
         f'{build} does not answer "what would you run?" in any way this '
-        f'knows: no build.ninja, no CMakeCache.txt, and no Makefile in it or '
-        f'in an immediate subdirectory.  Ask the project how it is built, '
+        f'knows.  {_what_the_tree_is(build)} Ask the project how it is built, '
         f'build it, and keep the tree it left behind.  Do NOT infer compile '
         f'commands by reading the sources: a guessed protocol is one whose '
         f'flags are almost right, which is the most expensive kind of wrong.')
+
+
+def _what_the_tree_is(build: Path) -> str:
+    """A sentence naming the closest thing this tree DOES look like.
+
+    A bare "I do not know this tree" sends the reader to the project's build
+    system, when the useful answer is often that the tree is a known KIND the
+    tool has no backend for — measured: CMake's "Unix Makefiles" generator
+    writes a `CMakeCache.txt` and no `build.ninja`, and saying so is the
+    difference between "add a backend" and "your build is broken".
+    """
+    cache = build / 'CMakeCache.txt'
+    if cache.is_file():
+        gen = ''
+        try:
+            for line in cache.read_text(errors='replace').splitlines():
+                if line.startswith('CMAKE_GENERATOR:INTERNAL='):
+                    gen = line.split('=', 1)[1].strip()
+                    break
+        except OSError:
+            pass
+        if gen == 'Ninja':
+            return ('It holds a CMakeCache.txt for the Ninja generator but no '
+                    'build.ninja, so the build was not run where it was '
+                    'configured.')
+        if gen:
+            return (f'It holds a CMakeCache.txt for the {gen!r} generator, '
+                    f'which produces no build.ninja, and no backend here '
+                    f'reads that.')
+        return ('It holds a CMakeCache.txt but no build.ninja, so it is a '
+                'CMake build whose generator produces no build.ninja; no '
+                'backend here reads that.')
+    if (build / 'Makefile').is_file():
+        return 'It holds a Makefile this backend cannot turn into commands.'
+    return 'It holds no build.ninja and no Makefile in it or one level down.'
 
 
 def _read_ninja(build: Path, tree_root: Path | str | None,
@@ -1787,8 +1840,19 @@ def infer_tree_root(build: Path) -> Path:
 
 
 def _is_ninja_tree(path: Path) -> bool:
-    """Does *path* hold a ninja build?  Asked of the tree, not of a flag."""
-    return (path / 'build.ninja').is_file() or (path / 'CMakeCache.txt').is_file()
+    """Does *path* hold a NINJA build?  Asked of the tree, not of a flag.
+
+    The test is `build.ninja` and NOTHING ELSE.  A `CMakeCache.txt` alone does
+    not make a tree a ninja tree: CMake's "Unix Makefiles" generator writes a
+    cache and no `build.ninja`, so a predicate that accepted the cache sent
+    such a tree to the ninja backend — measured, the whole run died with
+    ``ninja: loading 'build.ninja': No such file or directory``, which reads
+    like a broken project instead of "this tree is a Makefiles-generator CMake
+    build".  The cache is still read where it is actually needed (a CMake
+    tree's own sub-project roots, in ``_read_ninja``); it just does not decide
+    the backend.
+    """
+    return (path / 'build.ninja').is_file()
 
 
 # ── the acceptance declaration ────────────────────────────────
