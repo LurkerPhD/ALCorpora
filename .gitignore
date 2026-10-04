@@ -22,3 +22,9 @@ benchmark/*/origin_release/
 benchmark/*/.work/
 benchmark/*/results/
 benchmark/*/benchmark_results/
+
+# The regression script names the corpus's real projects and their build
+# systems (it is the corpus, not the tool), so it is a working artifact of
+# THIS checkout rather than part of the language-agnostic repo.  It stays on
+# disk and is run from here; `CLAUDE.md` says what it is for.
+regress.sh
