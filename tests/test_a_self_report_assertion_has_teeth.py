@@ -60,11 +60,14 @@ def _plan() -> VerificationPlan:
 
 
 def test_a_clean_table_passes():
-    assert check_self_reports(_plan(), _TABLE.replace('{num}', '0')) == []
+    problems, evidence = check_self_reports(
+        _plan(), _TABLE.replace('{num}', '0'))
+    assert problems == []
+    assert evidence, 'a pass must state the numbers it read'
 
 
 def test_a_nonzero_column_is_refused():
-    problems = check_self_reports(_plan(), _TABLE.replace('{num}', '7'))
+    problems, _ = check_self_reports(_plan(), _TABLE.replace('{num}', '7'))
     assert problems, 'a numerical error in the corpus\'s own table went '
     assert any('numerr' in p for p in problems), problems
 
@@ -72,8 +75,32 @@ def test_a_nonzero_column_is_refused():
 def test_a_missing_table_is_refused_not_passed():
     """The vacuous case: no table means no non-zero values to find."""
     for stdout in ('', 'unrelated output\nno summary here\n'):
-        problems = check_self_reports(_plan(), stdout)
+        problems, _ = check_self_reports(_plan(), stdout)
         assert problems, (
             'an assertion that matched NOTHING reported success — the '
             'verdict would have no checks behind it')
         assert any('matched nothing' in p for p in problems), problems
+
+
+def test_the_evidence_reaches_the_runs_output():
+    """A green verdict must show the numbers behind it.
+
+    A run that says only "no complaint" is indistinguishable from one that
+    read nothing — and this is the kind whose whole verdict comes from a
+    number the PROJECT printed about itself.
+    """
+    from protocolize.verify import suite
+
+    plan = _plan()
+    stdout = _TABLE.replace('{num}', '0')
+
+    class _Env:
+        jobs = 1
+
+    # A run with no results cannot be green (`require_min`), so give it the
+    # one pass the plan asks for.
+    ran = [suite.CaseResult('c1', 'pass', 0.0)]
+    result = suite._finish(plan, ran, _Env(), suite_stdout=stdout)
+    assert result.ok, result.output
+    assert 'read:' in result.output, result.output
+    assert 'numerr=0' in result.output, result.output

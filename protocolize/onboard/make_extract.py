@@ -102,6 +102,15 @@ def make_directories(tree: Path) -> list[Path]:
     directory compiled is refused rather than dropped.
     """
     out: list[Path] = []
+    if not tree.is_dir():
+        # A tree that is not there is an ANSWER — "this is not a make
+        # directory" — not a crash.  Measured while re-admitting a make
+        # project: the flow's `tree_subdir` default is `build` (right for the
+        # CMake default commands, which is what it pairs with), and against a
+        # hand-written make project the capture died with a `FileNotFoundError`
+        # traceback out of `iterdir` before any seam could open.  The seam
+        # exists to be asked; it cannot be asked if the flow dies first.
+        return out
     if _has_makefile(tree):
         out.append(tree)
     out.extend(sorted(d for d in tree.iterdir()

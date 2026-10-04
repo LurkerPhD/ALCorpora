@@ -203,6 +203,40 @@ class Golden:
                    path=d.get('path', ''), stamp=d.get('stamp', ''))
 
 
+
+
+
+#: The keys each assertion kind READS.  Text that names a key the mechanism
+#: does not look at is inert — it passes every check and changes nothing —
+#: and that class has bitten this repo twice: `atol` on a `field_assertion`
+#: was accepted and ignored, and a `facts` object with the wrong nesting was
+#: accepted and did nothing.  A key nobody reads is not a declaration.
+_ASSERTION_KEYS = {
+    'artifact': {'kind', 'path', 'exists', 'non_empty'},
+    'text_lockstep': {'kind', 'produced', 'reference', 'drop', 'keep', 'mask',
+                      'rtol', 'atol'},
+    'field_assertion': {'kind', 'produced', 'reference', 'model', 'drop',
+                        'keep', 'mask', 'rtol', 'atol'},
+    'metric': {'kind', 'from', 'pattern', 'reduce', 'value', 'name', 'ratio'},
+    'self_report': {'kind', 'in', 'reader', 'section_pattern', 'total_label',
+                    'require_min', 'require_zero'},
+    'suite': {'kind', 'in'},
+}
+
+
+def _assertion_key_problems(i: int, a: dict) -> list[str]:
+    """Keys on an assertion that the mechanism never reads."""
+    known = _ASSERTION_KEYS.get(a.get('kind'))
+    if known is None:
+        return []                      # an unknown kind is refused elsewhere
+    extra = sorted(set(a) - known)
+    if not extra:
+        return []
+    return [f'assertions[{i}] ({a["kind"]}) has key(s) {extra} that the '
+            f'mechanism does not read; it reads {sorted(known)} — a key '
+            f'nobody reads changes nothing']
+
+
 @dataclass
 class VerificationPlan:
     """One corpus's acceptance, whole.
@@ -452,6 +486,8 @@ class VerificationPlan:
             if not a.get('kind'):
                 bad.append(f'assertions[{i}] has no kind: the verdict it '
                            f'would render is not one the mechanism knows')
+                continue
+            bad.extend(_assertion_key_problems(i, a))
 
         for where, why in self._spelling_problems():
             bad.append(f'{where}: {why}')

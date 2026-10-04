@@ -116,6 +116,11 @@ class SuiteResult:
     #: every case it needed.  Handing them back is the difference between
     #: capturing a chain member's output and reporting "no golden".
     cases: dict[str, Case] = field(default_factory=dict)
+    #: What a `self_report` actually READ, whether the verdict passed or not.
+    #: A run that says only "no complaint" is indistinguishable from one that
+    #: read nothing, and this is the kind whose whole verdict comes from a
+    #: number the project printed about itself.
+    evidence: list[str] = field(default_factory=list)
 
     def by_id(self, case_id: str) -> CaseResult | None:
         for r in self.results:
@@ -274,14 +279,21 @@ def _read_pattern(text: str, pattern: str) -> dict:
     return got
 
 
-def check_self_reports(plan, suite_stdout: str) -> list[str]:
-    """Every reason the suite's own report does not support a pass.
+def check_self_reports(plan, suite_stdout: str) -> tuple[list[str], list[str]]:
+    """`(problems, evidence)`: why the report does not support a pass, and
+    WHAT WAS READ.
 
-    Empty means the report was read AND met its floors.  The floors are the
-    point: a self-verifying corpus's whole verdict comes from here, so a
-    report that could not be read must fail rather than pass vacuously.
+    Empty *problems* means the report was read AND met its floors.  The floors
+    are the point: a self-verifying corpus's whole verdict comes from here, so
+    a report that could not be read must fail rather than pass vacuously.
+
+    *evidence* is the same reading, kept even when it passes.  A verdict that
+    says only "no complaint" is indistinguishable from one that read nothing,
+    and this is the one kind whose verdict comes entirely from a number the
+    project printed about itself — so the run states the numbers it saw.
     """
     problems: list[str] = []
+    evidence: list[str] = []
     for i, a in enumerate(plan.assertions):
         if a.get('kind') != 'self_report':
             continue
@@ -300,6 +312,9 @@ def check_self_reports(plan, suite_stdout: str) -> list[str]:
                     f'assertions[{i}] the suite report matched nothing: a '
                     f'verdict with no checks behind it is not a pass')
             for section, counts in got.items():
+                evidence.append(
+                    f'assertions[{i}] {section}: '
+                    + ' '.join(f'{k}={v}' for k, v in sorted(counts.items())))
                 for key, floor in (a.get('require_min') or {}).items():
                     if counts.get(key, 0) < floor:
                         problems.append(
@@ -318,6 +333,9 @@ def check_self_reports(plan, suite_stdout: str) -> list[str]:
                 problems.append(
                     f'assertions[{i}] the suite report matched nothing: a '
                     f'verdict with no checks behind it is not a pass')
+            evidence.append(
+                f'assertions[{i}] '
+                + ' '.join(f'{k}={v}' for k, v in sorted(got.items())))
             for key, floor in (a.get('require_min') or {}).items():
                 if got.get(key, 0) < floor:
                     problems.append(
@@ -332,7 +350,7 @@ def check_self_reports(plan, suite_stdout: str) -> list[str]:
             problems.append(
                 f'assertions[{i}] is a self_report with no reader: nothing '
                 f'says which part of the report to believe')
-    return problems
+    return problems, evidence
 
 
 # ── metrics against a stored reference ────────────────────────
@@ -857,7 +875,9 @@ def _check_assertions(plan, env: Env, case: Case) -> CaseResult | None:
             diffs = compare.lockstep(
                 produced.read_text(encoding='utf-8', errors='replace'),
                 golden.read_text(encoding='utf-8', errors='replace'),
-                drop=a.get('drop', ()), rtol=a.get('rtol', compare.DEFAULT_RTOL),
+                drop=a.get('drop', ()), keep=a.get('keep', ()),
+                mask=a.get('mask', ()),
+                rtol=a.get('rtol', compare.DEFAULT_RTOL),
                 atol=a.get('atol', compare.DEFAULT_ATOL))
             if diffs:
                 return CaseResult(case.id, 'diff', 0.0,
@@ -888,6 +908,7 @@ def _check_assertions(plan, env: Env, case: Case) -> CaseResult | None:
                 produced.read_text(encoding='utf-8', errors='replace'),
                 golden.read_text(encoding='utf-8', errors='replace'),
                 model=a.get('model') or {}, drop=a.get('drop', ()),
+                keep=a.get('keep', ()), mask=a.get('mask', ()),
                 rtol=a.get('rtol', compare.DEFAULT_RTOL),
                 atol=a.get('atol'))
             if diffs:
@@ -1139,7 +1160,8 @@ def _finish(plan, results: list[CaseResult], env: Env,
     # summary table is what a self-verifying corpus's verdict actually rests
     # on, and it is read from the runner's stdout.  A failure here is reported
     # against the suite's own id, because that is what failed to hold.
-    complaint = check_self_reports(plan, suite_stdout) if suite_stdout else []
+    complaint, evidence = (check_self_reports(plan, suite_stdout)
+                           if suite_stdout else ([], []))
     if complaint:
         results = list(results) + [
             CaseResult(plan.target.product or 'suite', 'diff', 0.0,
@@ -1150,10 +1172,15 @@ def _finish(plan, results: list[CaseResult], env: Env,
     suite = SuiteResult(results=results, counts=counts, ok=ok,
                         captured=captured,
                         cases={c.id: c for c in (cases or ())})
+    # The numbers the verdict rests on, printed whether it passed or not.  A
+    # reader of a green run has to be able to see that it read something.
+    suite.evidence = list(evidence)
     # A suite's CPU is the ONE invocation it made; a per-case run's is the sum
     # of its cases.  Both are measurements; neither is a default.
     suite.output = render(results, counts,
                           cpu_total=_cpu_total(results) if cpu is None else cpu)
+    for line in suite.evidence:
+        suite.output += f'  read: {line}\n'
     return suite
 
 

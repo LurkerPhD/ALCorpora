@@ -44,27 +44,52 @@ DEFAULT_RTOL = 0.05
 DEFAULT_ATOL = 0.5
 
 
-def normalize(text: str, drop) -> list[str]:
-    """The comparable form of *text*: volatile lines gone, whitespace folded.
+def normalize(text: str, drop=(), keep=(), mask=()) -> list[str]:
+    """The comparable form of *text*: three ways to say what not to compare.
 
-    *drop* is an iterable of REGEX SOURCE STRINGS; a line that any of them
-    matches is not compared.  Patterns rather than plain text because that is
-    what a corpus declares — NASTRAN drops every line starting with a digit,
-    and a search for the literal ``'^\\d'`` would drop nothing at all while
-    looking entirely reasonable.
+    A golden comparison has exactly three shapes of problem, and each has its
+    own mode rather than being forced through one:
+
+    ``drop``  — BLACKLIST.  A line matching any regex is not compared. Right
+                when the whole line is noise (a page header, a banner).
+
+    ``keep``  — WHITELIST.  ONLY lines matching one of these are compared.
+                Right when the output is mostly chatter and the verdict rests
+                on a few known lines.  Applies after ``drop``, so the two
+                compose: keep the table, drop one column of it.
+
+    ``mask``  — CUSTOM TRIM.  ``(regex, replacement)`` pairs applied INSIDE
+                each line, so the rest of the line is still compared.  This is
+                the one that matters most, and the reason it is not just
+                "drop": a line like `STEP 4 RESULT 1.5 ELAPSED 3:55:16` mixes
+                a quantity the project is judged on with a clock reading.
+                Dropping it stops comparing the RESULT too — the gate quietly
+                relaxed — while masking the clock keeps the check.
+
+    All three take REGEX SOURCE STRINGS, because that is what a corpus
+    declares: NASTRAN drops every line starting with a digit, and a search for
+    the literal ``'^\\d'`` would drop nothing at all while looking entirely
+    reasonable.
 
     Blank lines disappear and runs of whitespace fold to one space, but
     leading whitespace is NOT stripped: the corpora do not strip it, and
     stripping here would make a line whose indentation changed compare equal
     to one whose indentation did not.
     """
-    patterns = [re.compile(p) for p in drop if p]
+    drops = [re.compile(p) for p in (drop or ()) if p]
+    keeps = [re.compile(p) for p in (keep or ()) if p]
+    masks = [(re.compile(p), (r if r is not None else ''))
+             for p, r in (mask or ()) if p]
     kept: list[str] = []
     for raw in text.splitlines():
         s = raw.rstrip()
+        for rx, repl in masks:
+            s = rx.sub(repl, s)
         if not s.strip():
             continue
-        if any(p.search(s) for p in patterns):
+        if any(p.search(s) for p in drops):
+            continue
+        if keeps and not any(p.search(s) for p in keeps):
             continue
         kept.append(re.sub(r'\s+', ' ', s))
     return kept
@@ -106,7 +131,8 @@ def numclose(gen_line: str, base_line: str, *, rtol: float = DEFAULT_RTOL,
     return _FLOAT_RE.sub(_MASK, gen_line) == _FLOAT_RE.sub(_MASK, base_line)
 
 
-def lockstep(gen_text: str, base_text: str, *, drop,
+def lockstep(gen_text: str, base_text: str, *, drop=(),
+             keep=(), mask=(),
              rtol: float = DEFAULT_RTOL, atol: float = DEFAULT_ATOL,
              max_diffs: int | None = None) -> list[tuple]:
     """Compare two artifacts line for line.
@@ -121,8 +147,8 @@ def lockstep(gen_text: str, base_text: str, *, drop,
     everywhere reports the place it started diverging rather than thousands
     of lines.
     """
-    gl = normalize(gen_text, drop)
-    bl = normalize(base_text, drop)
+    gl = normalize(gen_text, drop, keep, mask)
+    bl = normalize(base_text, drop, keep, mask)
     diffs: list[tuple] = []
     for i in range(max(len(gl), len(bl))):
         if i >= len(gl):
@@ -231,7 +257,8 @@ def _fields_close(gen: list[float], base: list[float], *,
 
 
 def field_lockstep(gen_text: str, base_text: str, *, model: dict,
-                   drop=(), rtol: float = DEFAULT_RTOL,
+                   drop=(), keep=(), mask=(),
+                   rtol: float = DEFAULT_RTOL,
                    atol: float | None = None,
                    max_diffs: int | None = 20) -> list[tuple]:
     """Lockstep, comparing the declared PHYSICAL columns of each table.
@@ -247,8 +274,8 @@ def field_lockstep(gen_text: str, base_text: str, *, model: dict,
     — the magnitude the corpus already declares as "a theoretical zero" — so a
     plan written before this parameter existed behaves exactly as it did.
     """
-    gl = normalize(gen_text, drop)
-    bl = normalize(base_text, drop)
+    gl = normalize(gen_text, drop, keep, mask)
+    bl = normalize(base_text, drop, keep, mask)
     near_zero = float(model.get('near_zero', 1e-3))
     abs_tol = near_zero if atol is None else float(atol)
     titles: dict[str, dict] = {}
