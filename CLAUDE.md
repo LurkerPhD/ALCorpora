@@ -93,6 +93,12 @@ python3 bench.py admit    DIR [--…]        # 整条流程（委托 admit.py --
 
 ## 四之三、把"哪些行不该比"推成正则：经验与陷阱
 
+**适用范围：只针对需要 golden 文本对比的验证**——即断言种类 `text_lockstep` 与
+`field_assertion`。**不适用**于 `self_report`（结论来自项目自报的数值，根本没有要比的文本）、
+`artifact`（只看文件是否存在/非空）、`metric`（取一个数比一个声明值）。这几类里写
+`drop/keep/mask` 是机制不会读的键，计划 schema 会按名字拒绝。**没有 golden 对比的验证，
+本节整节不适用。**
+
 一个项目要 golden 对比时，**哪些行是运行依赖的**不是猜的，是**测出来的**：
 
 ```bash
