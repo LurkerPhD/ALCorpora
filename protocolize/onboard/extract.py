@@ -1136,35 +1136,48 @@ def capture_build(proto: Protocol, tree_root: Path | str, *,
     })
 
 
-def capture_prepare(project_root: Path | str | None,
-                    *, declared: 'list[dict] | None' = None) -> list[dict]:
+def capture_prepare(*, declared: 'list[dict] | None' = None) -> list[dict]:
     """The ``prepare`` section: what the corpus needs ONCE, checked each time.
 
-    The project states the biggest part of this itself.  A ``.gitmodules``
-    entry IS the declaration "this directory is a library I vendored", and it
-    comes with the fetch command git maintains for it — so a submodule op is
-    DERIVED from the project rather than listed by hand.  Its ``check`` is the
-    submodule's own path, which is exactly the corpus's way of telling that
-    the fetch already happened, so a second onboarding pays nothing.
+    TWO kinds of op, and only one of them needs anyone to look at the project.
 
-    The rest cannot be derived from the tree, because it is not in the tree:
-    a portability patch the corpus needs to run at all is a Delta between the
-    shipped source and a buildable one, and nothing in the shipped source
-    states it.  Those arrive as *declared* ops (the skill fills them), and
-    are carried through with their checks intact rather than re-derived.
+    **Submodules are ONE fixed op, not one per submodule.**  The command that
+    fetches them all is ``git submodule update --init --recursive``; git walks
+    its own roster, so enumerating the roster here would only be a second copy
+    of it.  And per-submodule ops were not merely redundant — each one's
+    ``check`` was ``{"path": <dir>}``, and a submodule that has NOT been
+    initialized still leaves its directory BEHIND, EMPTY.  Measured: the check
+    therefore reported "already applied" for exactly the state the op exists
+    to fix, the op never ran, and the build then failed on a missing
+    directory — reported as the project's problem.
 
-    Order is preserved: `declared` first, then the submodules — a patch that
-    has to land before a submodule is fetched keeps its place, and the
-    derived ops only ever append.
+    So the op is unconditional and the CHECK carries the whole decision, told
+    by git itself (``-`` uninitialized, ``+`` wrong commit, ``U`` conflict):
+
+        check: no `.git` here (nothing to do) OR git reports no such submodule
+        run:   git submodule update --init --recursive
+
+    That is correct for a git checkout with submodules, a git checkout without
+    them (the command is a no-op), and a tree that is not a checkout at all
+    (where running it would fail with exit 128).  Measured on all three.
+
+    The other kind CANNOT be derived, because it is not in the tree: a
+    portability patch the corpus needs in order to build at all is a delta
+    between the shipped source and a buildable one, and nothing in the shipped
+    source states it.  Those arrive as *declared* ops and are carried through
+    with their checks intact rather than re-derived.
+
+    Order is preserved: `declared` first, then the submodule op — a patch that
+    has to land before a submodule is fetched keeps its place.
     """
     ops: list[dict] = [dict(op) for op in (declared or ())]
-    if project_root:
-        for path in gitmodules_paths(project_root):
-            ops.append({
-                'op': 'submodule',
-                'check': {'path': path},
-                'run': f'git submodule update --init {path}',
-            })
+    ops.append({
+        'op': 'submodules',
+        'check': ('test ! -e .git || '
+                  'test -z "$(git submodule status --recursive 2>/dev/null '
+                  '| grep "^[-+U]")"'),
+        'run': 'git submodule update --init --recursive',
+    })
     return ops
 
 
@@ -1585,7 +1598,7 @@ def extract_protocol(build_dir: Path | str, *,
     # in the ninja reader: both are properties of the protocol, not of the
     # backend that happened to produce it, so a make tree gets them too.
     proto.build = capture_build(proto, tree, cfg=cfg)
-    proto.prepare = capture_prepare(project_root, declared=prepare)
+    proto.prepare = capture_prepare(declared=prepare)
     if not verify:
         return proto
     _prove(proto, build, tree_root, work_root)
