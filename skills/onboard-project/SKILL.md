@@ -388,6 +388,97 @@ plan.save(Path('<build tree>') / 'verification_plan.json')
 "          # run from the deepf2c checkout root
 ```
 
+### Two runs of one program: what legitimately differs
+
+**This applies only when the check COMPARES two texts against a golden** —
+the plan's `text_lockstep` and `field_assertion`.  A `self_report` reads
+numbers the project printed about itself, `artifact` is existence, `metric` is
+one value: none has a golden text, none has a line to suppress, and a
+`drop`/`keep`/`mask` written for them is a key the mechanism never reads (the
+plan schema refuses such a key by name).
+
+A project that compares a fresh run against a golden will show differences
+that are **not** differences in what it computed.  They come from the RUN.
+Recognize the category, then write a rule for it — the rule goes in the
+project's own declaration (`declaration.json`, `comparison`), never in the
+tool.
+
+| category | what the line looks like |
+|---|---|
+| **clocks** | a date, a wall/CPU/elapsed time, `N SECONDS`, a "time estimate", a progress percent, uptime, a per-step timer row |
+| **memory addresses** | a pointer, a pool/heap/stack base, an allocation offset, `%p`, a bare wide integer |
+| **absolute paths** | a build dir, source root, tmp dir, home, install prefix, `argv[0]`, an absolute path inside a diagnostic |
+| **process identity** | PID, PPID, TID, session or job id |
+| **machine / user identity** | hostname, FQDN, username, uid, domain, node name |
+| **randomness / session id** | UUID/GUID, a seed, a nonce, a `mkstemp` name, hash/container iteration order |
+| **environment-derived** | CPU count, memory size, load average, free disk, terminal width, locale |
+| **filesystem metadata** | a file size, mtime, inode, device number, "bytes written" |
+| **concurrency order** | lines, or a float SUM, whose order depends on scheduling |
+| **uninitialized / padding** | bytes never assigned; stack garbage in a hex dump |
+| **build / version stamps** | a compiler version string, a build date, a VCS revision, "built by" |
+
+**Deliberately NOT on this list: near-zero floating-point noise** (a residual
+around `1e-18` whose sign is meaningless).  That is not a run-dependency — it
+is a numerical-tolerance matter, and the plan's `rtol`/`atol` is where it
+belongs.  Treating it as a line to drop would stop comparing the magnitude.
+
+**Concurrency order is not a line rule.**  `drop`/`keep`/`mask` act on lines,
+and that problem is the line ORDER; a float sum is worse, since reordering
+changes the result through non-associativity — a genuine numeric difference.
+Such an output needs a comparison that is order-blind (sort before comparing)
+or a different assertion kind.  Do not force it into a line pattern.
+
+#### The saturation trap, which runs the other way
+
+A fixed-width field that cannot hold its value **saturates**: an 8-wide
+integer field printing a 9-digit number emits a run of `*` instead.  **Two
+DIFFERENT values then print as the SAME string and compare EQUAL** — so the
+error direction is always a **false PASS**, and a line that saturates in both
+runs looks like a perfectly stable constant until one run happens to fit.
+
+So **"this line looks stable" does NOT mean "this line did not move."**  For a
+fixed-width field, stability is the symptom, not the evidence.  To confirm a
+suspected saturation: **widen the field temporarily and rebuild**, run several
+times, and see whether the values are then all different.
+
+Such a field almost always shares its line with stable, meaningful values, so
+it must be **`mask`ed, not dropped** — dropping the line stops comparing the
+rest of it too.
+
+#### How to find which lines actually move
+
+Do not eyeball the output.  Measure it — the same binary, twice, and the
+second run under a shifted clock:
+
+```bash
+python3 bench.py evidence <build dir> --shift-date
+```
+
+It reports the line SHAPES that moved between the two runs and that the plan's
+own `drop`/`keep`/`mask` do **not** yet cover: exactly what a rule still has to
+account for.  Then write the rule, preferring `mask` over `drop` — `drop`
+silences everything on the line, and if any of it is judged, the gate just got
+quieter.
+
+Two limits to hold onto.  **A two-run diff is a LOWER BOUND**: a line that
+happened to agree this time is invisible, so read the project's own comparison
+rules too if it ships any.  And **several lines from one MECHANISM move
+together** (a timer block, a pool report): a rule written for the one line you
+saw leaves the rest — write it against the mechanism.
+
+#### Then re-measure; a single PASS proves nothing
+
+After editing the declaration, re-capture (the declaration is consumed when
+the plan is captured) and run it again.  `bench.py evidence` must come back
+with nothing left uncovered, and the verdict must hold on a **fresh capture**
+— the difference is intermittent by nature, so one green run can be luck.
+
+**Never classify a diff as "reasonable" and move on.**  That is exactly how a
+real difference gets hidden: an automatic "this looks like a timestamp, skip
+it" is the same failure as any other check that did nothing while reporting
+success.  The categories above are HYPOTHESES — a measurement confirms them,
+and a rule suppresses exactly one measured quantity and nothing else.
+
 ## Available tools
 
 `protocolize/onboard/` holds a working implementation of all of the above for
