@@ -28,7 +28,7 @@ _SCRIPT = REPO / 'skills/fetch-benchmark-project/scripts/fetch.py'
 
 _ROW = ('number,name,language,build_system,verification,native,build_protocol_a,'
         'verify_on_project_b,verify_on_replay_b,status,notes\n'
-        '009,NASTRAN-95,fortran,make,golden,yes,yes,yes,yes,PASS,established\n')
+        '012,NASTRAN-95,fortran,make,golden,yes,yes,yes,yes,PASS,established\n')
 
 
 def _load():
@@ -40,7 +40,7 @@ def _load():
 
 def _benchmark(tmp_path: Path):
     """A benchmark folder whose name carries an admission number."""
-    dest = tmp_path / '009-thing'
+    dest = tmp_path / '012-thing'
     src = dest / 'thing'
     src.mkdir(parents=True)
     (src / 'Makefile').write_text('all:\n\t@true\n')
@@ -55,8 +55,8 @@ def test_a_failed_readmit_leaves_the_row(tmp_path: Path):
     fetch.BENCH_CSV = csv_path
     fetch.native = lambda src, args: (False, 'the build failed\n', [])
 
-    rc = fetch.main([str(dest), '--readmit', '--configure', '',
-                     '--build', 'false', '--test', 'false'])
+    rc = fetch.main([str(dest), '--readmit', '--agent-cmd', 'false',
+                     '--configure', '', '--build', 'false', '--test', 'false'])
 
     assert rc == 1
     row = next(csv.DictReader(csv_path.open()))
@@ -77,7 +77,8 @@ def test_a_failed_first_admission_is_still_recorded(tmp_path: Path):
     fetch.fetch = lambda url, dest: dest.mkdir(parents=True)
     fetch.native = lambda src, args: (False, 'the build failed\n', [])
 
-    rc = fetch.main(['https://example.invalid/proj', '--name', 'proj'])
+    rc = fetch.main(['https://example.invalid/proj', '--name', 'proj',
+                     '--agent-cmd', 'false'])
 
     assert rc == 1
     row = next(csv.DictReader(csv_path.open()))
@@ -95,7 +96,7 @@ def test_a_readmit_never_deletes_the_project_it_is_re_proving(tmp_path: Path):
     """
     fetch = _load()
     # `--readmit` takes a BENCHMARK folder, whose name carries the number.
-    dest = tmp_path / '009-proj'
+    dest = tmp_path / '012-proj'
     src = dest / 'proj'
     (src / 'sub').mkdir(parents=True)
     (src / 'sub' / 'a.c').write_text('int main(void){return 0;}\n')
@@ -108,7 +109,7 @@ def test_a_readmit_never_deletes_the_project_it_is_re_proving(tmp_path: Path):
     fetch.BENCH_CSV.write_text(_ROW)
     fetch.native = lambda s, a: (False, 'stop here\n', [])
 
-    rc = fetch.main([str(dest), '--readmit', '--tree-subdir', '.',
+    rc = fetch.main([str(dest), '--readmit', '--tree-subdir', '.', '--agent-cmd', 'false',
                      '--configure', '', '--build', 'false', '--test', 'false'])
 
     assert rc == 1
@@ -129,7 +130,7 @@ def test_a_readmit_never_deletes_the_project_it_is_re_proving(tmp_path: Path):
 def test_an_out_of_source_build_directory_is_still_cleared(tmp_path: Path):
     """The guard must not disable the cleanup it exists to make safe."""
     fetch = _load()
-    dest = tmp_path / '009-proj'
+    dest = tmp_path / '012-proj'
     src = dest / 'proj'
     (src / 'sub').mkdir(parents=True)
     (src / 'sub' / 'a.c').write_text('int main(void){return 0;}\n')
@@ -143,7 +144,7 @@ def test_an_out_of_source_build_directory_is_still_cleared(tmp_path: Path):
     fetch.BENCH_CSV.write_text(_ROW)
     fetch.native = lambda s, a: (False, 'stop here\n', [])
 
-    fetch.main([str(dest), '--readmit', '--tree-subdir', 'build',
+    fetch.main([str(dest), '--readmit', '--tree-subdir', 'build', '--agent-cmd', 'false',
                 '--configure', '', '--build', 'false', '--test', 'false'])
 
     assert not stale.exists(), 'a generated build directory should be cleared'

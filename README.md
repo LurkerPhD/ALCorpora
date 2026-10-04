@@ -96,17 +96,18 @@ layer 2.
 
 ## The delivery flow
 
-One admission, end to end. **`[AGENT]` is a judgement only generalisation can
-supply; `[PY]` is a step the tool performs deterministically.** The agent is
-entered ONLY where the tool STOPS, and each such place below states what it
-must produce — and what it must never do.
+One admission, end to end. **`[PY]` is a step the tool performs
+deterministically; `[SKILL]` is per-project knowledge the caller supplies; a
+`SEAM` is where a step FAILS and the flow asks an agent — which it does
+itself, adopting the answer only if running it makes the step pass.**
 
 ```python
 ADMIT_ONE_PROJECT(source):
-    # [AGENT] A1 — the ONE step every project pays for generalisation on
-    A1  configure, build, test, tree_subdir = research_how_it_builds(source)
+    # [SKILL] A1 — the per-project build commands: knowledge about THAT project
+    A1  configure, build, test, tree_subdir = how_it_builds(source)
 
-    # [PY] one call; the whole pipeline below is deterministic
+    # [PY] one call; the pipeline below is a SCRIPT except where a step fails
+    #      and the flow opens a SEAM (below)
     P1  call:  python3 bench.py {fetch <source> | admit <dir>} <args...>
     P2  n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
     P3  fetch(source -> dest/inner)              # clone/copy, retried; submodules
@@ -117,67 +118,50 @@ ADMIT_ONE_PROJECT(source):
     # P5-P6 native: the project's own toolchain, its own verification
     P5  apply prepare_ops                        # idempotent {op, check, run}
     P6  run (configure, build, test)             # the project's OWN lines
-        on failure -> A6
+        failed -> SEAM A
 
     # P7-P8 §A: the build protocol, PROVEN by replaying it
     P7  proto = extract_protocol(build)          # ask the build system's sub-tools
-        on refusal -> A7
     P8  self_check(proto)                        # mirror; delete generated parts AND
                                                  # products; flat_cmake; compare symbols
-        on refusal -> A7
+        cannot read / does not replay -> TOOL GAP    # extend the extractor + a test
 
     # P9 the verification protocol, read from the project's OWN declaration
     P9  plan = capture_verification(proto, declaration, facts)
-        on problems -> A9
+        not executable -> SEAM D
 
     # P10 the golden is MADE, never borrowed
     P10 goldens = ensure_reference(plan)         # reference_run only
-        if 0 -> A10
+        if 0 -> SEAM D
 
     # P11-P12 §B twice: the project's build AND the replay must AGREE
-    P11 verify(project)                          # on failure -> A11
-    P12 verify(replay)                           # on failure -> A12
+    P11 verify(project)      failed -> SEAM E
+    P12 verify(replay)       failed -> TOOL GAP   # protocol and build disagree
 
     P13 record(PASS, language, notes)            # only here is it legal
 
 
-# ══ [AGENT] entered ONLY where the tool STOPS; each produces DATA ═══════════
+# ══ A SEAM: the flow STOPS, asks an agent, adopts ONLY what a re-run proves ═══
 
-A6  JUDGE_BUILD_FAILURE(log):
-        read(log); diagnose; the fix is one of:
-            prepare_op {op, check, run}   # writes in the tree = a PATCH; idempotent
-            build_flag                    # caller-level; not a patch
-        retry P5                           # a fix that did not build is NOT recorded
-        if none can be confirmed -> BLOCKED
+SEAM(seam_id, what_failed):
+    answer = ask_agent(seam_id, what_failed)     # a TYPED contract (seams.KINDS)
+    if answer.kind == protocol_gap:
+        report and STOP                          # the protocol must GROW; never retried
+    adopt(answer); re-run the step that failed   # adopted ONLY if that step then passes
+    the same failure is not asked twice in one run; passes are bounded
+    no agent reachable -> the seam closes, the step fails as it would have
+                         # an unreachable agent is NEVER a project's verdict
 
-A7  JUDGE_EXTRACTION_FAILURE(exc):
-        "the protocol is wrong"           -> fix the arguments
-        "the tool cannot read this build" -> extend the RULE in extract.py + a test
-                                             # NEVER hand-write a protocol to get past it
-
-A9  JUDGE_PLAN(problems):
-        declaration wrong or missing      -> write the project's own declaration
-        the capture cannot read a shape   -> extend capture_verification + a test
-                                             # NEVER hand-write a plan to get past it
-
-A10 JUDGE_NO_GOLDENS():
-        write facts.json                   # what the programs need in order to RUN
-
-A11 JUDGE_B_PROJECT(printed):
-        P11a python3 bench.py evidence --shift-date     # [PY] two runs, second shifted
-        P11b for each shape reported UNCOVERED: recognize it -> write a rule into the
-             project's declaration  # drop | keep | mask; prefer mask; never drop a
-                                    # line carrying a judged value
-        P11c re-capture; re-measure (must be empty); re-verify on a FRESH capture
-             # NEVER call a difference "reasonable" and move on
-
-A12 JUDGE_B_FLAT(printed):
-        green on the project but not on the replay -> the TOOL is wrong, not the project
+# the three seams, and what each will adopt:
+#   A  P6 failed (build/verify)       -> native_commands | prepare_ops
+#   D  P9/P10 (plan / no goldens)     -> facts | declaration
+#   E  P11 failed (§B on the project) -> prepare_ops | facts | declaration
+# any seam may instead answer protocol_gap: "the protocol cannot express this".
 ```
 
 ### What each step does
 
-**`[PY]` — the pipeline (deterministic; the agent is not consulted).**
+**`[PY]` — the pipeline (a script; a failure at P6/P9/P10/P11 opens a seam).**
 
 * **P1** `bench.py {fetch|admit}` — the single entry point. `fetch` is a first
   admission (number, fetch, prove); `admit` re-proves one already in
@@ -200,7 +184,7 @@ A12 JUDGE_B_FLAT(printed):
   `{op, check, run}` and idempotent: `check` decides whether it is already
   applied, so a repeat costs nothing.
 * **P6** the project's own build and verify — the per-project commands (A1).
-  A failure STOPS here and the printed log goes to A6.
+  A failure opens SEAM A, and the printed log goes with it.
 * **P7** extract the protocol — ASK the build system's own sub-tools
   (`ninja -t compdb`, `make -Bn`); never parse the manifest. Which backend is
   chosen by what the tree holds.
@@ -220,34 +204,42 @@ A12 JUDGE_B_FLAT(printed):
   plan run against two builds, so a disagreement is the protocol's fault.
 * **P13** record the row. Only here is the project legal.
 
-**`[AGENT]` — entered only where the tool STOPS, and each produces DATA.**
+**A SEAM — the flow stops, asks an agent, and adopts only what a re-run proves.**
 
-* **A6** a native build/verify failure — read the log, diagnose, and produce
-  one of: a `prepare` op (writes in the project tree, so it IS a patch, and it
-  must be idempotent with a check) or a build flag (caller-level, not a
-  patch). Retry. **A fix that did not make the build work is never recorded.**
-* **A7** §A refused — either the protocol/arguments are wrong, or the tool
-  cannot read this build. The second is a TOOL gap: extend the rule, with a
-  test. Hand-writing a protocol to get past it is forbidden.
-* **A9** the plan is not executable — either the project's declaration is
-  wrong or missing, or the capture cannot read a shape it declares. The second
-  is a TOOL gap: extend `capture_verification`, with a test.
-* **A10** the reference run captured nothing — the programs need something in
-  order to RUN that the tree cannot show (a home directory, a resource
-  directory, a program config). Declare it in `facts.json`.
-* **A11** a golden comparison differs — MEASURE it (`bench.py evidence
-  --shift-date`, two reference runs), recognize each moving line shape, and
-  write a rule for it into the PROJECT's declaration (`drop`/`keep`/`mask`,
-  preferring `mask`). Then re-capture, re-measure (must be empty), and re-verify
-  on a FRESH capture. Never call a difference "reasonable" and move on.
-* **A12** green on the project but not on the replay — the protocol and the
-  build disagree, which is the TOOL's fault, not the project's.
+A seam is a place where a deterministic step FAILS and no rule can decide what
+to do. The flow opens it itself: it hands the agent the failure and the tree,
+gets back a TYPED answer, and — this is the load-bearing part — **adopts it
+only by running it.** An answer that does not make the failed step pass is
+discarded by that step failing again, so nothing is taken on the agent's word.
+The same failure is not asked twice in one run, and the passes are bounded.
 
-The single `[AGENT]` step every project pays for is `research_how_it_builds`:
-a project's native toolchain is knowledge about THAT project, and encoding a
-guess in the tool would push project knowledge into the tool. Everything else
-the agent does is triggered by the tool STOPPING, and produces data — a
-prepared op, a fact, a rule, or an extended rule — never a step of the flow.
+* **SEAM A** (P6 failed) — the build or verify did not work. Accepts
+  `native_commands` (the commands that DO build it) or `prepare_ops` (patches
+  it needs first, each `{op, check, run}`, idempotent). **A fix that did not
+  make the build work is never recorded.**
+* **SEAM D** (P9/P10) — the captured plan is not executable, or the reference
+  run captured nothing. Accepts `facts` (what the programs need in order to
+  RUN that the tree cannot show — a home directory, a resource directory, a
+  program config) or `declaration` (the project's OWN comparison rules:
+  `drop`/`keep`/`mask`, `rtol`/`atol`).
+* **SEAM E** (P11) — §B is not green on the project's own build. Accepts
+  `prepare_ops`, `facts` or `declaration` — a project problem a patch can fix.
+
+Any seam may instead answer **`protocol_gap`**: "the protocol cannot express
+this". That is not retried and not guessed at — the flow records it and stops,
+because growing the protocol is the tool's work, not the agent's.
+
+**Not every stop is a seam.** §A cannot read the build, or the replay and the
+project disagree — those are the TOOL's gaps, and the answer is to extend the
+extractor or the comparator WITH A TEST, never to hand-write a protocol or a
+plan to get past them. A seam that cannot reach its agent is the same: the
+step fails exactly as it would have, and that is never a verdict about the
+project.
+
+**The one step no seam covers is `research_how_it_builds` (A1)** — a project's
+native toolchain is knowledge about THAT project, and encoding a guess in the
+tool would push project knowledge into the tool. It is supplied by the caller,
+exactly like the project's own declarations.
 
 ---
 

@@ -78,15 +78,14 @@ def fetch_namespace() -> dict:
 
 
 def _make_agent(args):
-    """The seam agent, or None when every seam is closed.
+    """The seam agent.  A seam that cannot reach it falls back to no agent.
 
-    `--no-agent` is not a debugging flag: it is the guarantee that the whole
-    flow can be exercised without a model, which is what makes the seams
-    testable and what keeps a missing `claude` from ever reading as a verdict
-    about a project.
+    There is no switch to close the seams: an unreachable agent IS the closed
+    state (`AgentUnavailable` makes the seam give up, and the step fails
+    exactly as it would with no agent at all).  That keeps one path instead of
+    two, and it keeps a missing `claude` from ever reading as a verdict about
+    a project — it reads as `AGENT_ERROR`, which is what it is.
     """
-    if getattr(args, 'no_agent', False):
-        return None
     from protocolize.agent import Agent
     cmd = (args.agent_cmd
            or os.environ.get('PROTOCOLIZE_AGENT_CMD')
@@ -716,10 +715,6 @@ def main(argv=None, namespace: dict | None = None) -> int:
                         'PROTOCOLIZE_AGENT_CMD, else `claude`). Seams are '
                         'where judgement is needed and a value cannot be read '
                         'out of the project.')
-    p.add_argument('--no-agent', action='store_true',
-                   help='close every seam. A flow that needs judgement then '
-                        'refuses and records why, which is how the whole '
-                        'path is testable without a model.')
     p.add_argument('--max-agent-calls', type=int, default=6,
                    help='the ceiling on agent calls for one project '
                         '(default: 6)')

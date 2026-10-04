@@ -39,7 +39,7 @@ number is assigned, but no protocol is recorded, and the reason is written
 down. Do not invent a build system for them — a recorded command is the
 authority, and inventing one is the thing this tool exists to avoid.
 
-## Procedure — ONE call, and your judgement where it stops
+## Procedure — ONE call; the flow repairs itself at a seam
 
 ```bash
 python3 bench.py fetch <url-or-path> --name X      # a FIRST admission
@@ -48,10 +48,11 @@ python3 bench.py admit <benchmark dir> --…          # re-prove one
 
 **The loop itself is the tool's.** Numbering, fetching, the native build and
 test, §A, §B on the project and on the replay, and the row — `admit.py` runs
-them in order and stops where it must. You do not re-run those steps by hand
-or reproduce them in your own sequence; you read what the call returns and
-decide the ONE thing it cannot: **the per-project build commands, and the fix
-when the build fails.**
+them in order. When a step FAILS the flow opens a SEAM and asks an agent
+ITSELF, adopting the answer only if re-running that step passes — so you do
+not re-run those steps by hand, and you do not hand-diagnose a failure the
+seam already takes. You read what the call returns and supply the ONE thing no
+seam can: **the per-project build commands — how THIS project builds.**
 
 You run this to completion yourself. **Do not stop between iterations to ask
 the user**: a project that fails at a step is the next thing to work, and the
@@ -63,14 +64,20 @@ python3 bench.py fetch <url-or-path> --name X \
     --configure "" \                                  # nothing to configure
     --build "make -C source/mis && make -C source/mds" \  # its OWN build
     --test "<a script that runs it and checks its own banner>" \
-    --tree-subdir source \
-    --prepare fix.json \        # ops YOU diagnosed, each {op, check, run}
-    --facts facts.json --declaration rules.json         # its own declarations
+    --tree-subdir source
 ```
 
-"BLOCKED" means: the failure has no fix you can name AND confirm — a missing
-toolchain that cannot be installed, a resource the repo does not ship. Report
-that in one line. Everything else, fix and continue.
+You MAY also pass `--prepare` / `--facts` / `--declaration` when you already
+know them, but the flow's seams produce those itself when you do not.
+
+**What the seams do without you.** A native build or verify that fails opens
+SEAM A; a plan that will not run, or a reference run that captures nothing,
+opens SEAM D; §B failing on the project's own build opens SEAM E. Each may
+instead answer `protocol_gap` — "the protocol cannot express this" — and stop,
+because growing the protocol is the tool's work, not the agent's.
+
+A `BLOCKED` / `PROTOCOL_GAP` / `REFUSED` you get back means the seam did NOT
+resolve it. Report that in one line.
 
 **A refusal that is not about the project is a TOOL gap.** When §A cannot read
 the build, or the capture cannot read a declaration shape, the fix is to
@@ -120,34 +127,31 @@ source tree does not contain, write one (a small script beside the project's
 other onboarding inputs) and point `--test` at it — that script is a
 per-project research result, exactly like the build commands.
 
-### Diagnosing a native build failure
+### What SEAM A does about a native build failure
 
-The failure is INFORMATION, and it names its own cause. Read it, decide the
-fix, make the fix reproduce, and retry — do not paper over it.
+**You do not do this by hand.** A native build or verify that fails opens SEAM
+A, which hands the agent the failure and the tree and adopts only an answer
+that makes the step pass — so a fix that did not make the build work is never
+recorded. The knowledge it carries:
 
-1. **Read the failure.** Real examples, and the shape of the fix:
-   * `No rule to make target '..\bd\dpdcbd.o'` — a Makefile spelling target
-     paths with BACKSLASHES (Windows). Confirm: the slashed path names a real
-     file, the backslashed one does not. Fix: normalise the paths.
-   * `Error: Type mismatch between actual argument ...` / `BOZ constant ...
-     nonstandard postfix syntax` — today's gfortran rejects a Fortran dialect
-     the project was written in. Fix: the flag gfortran documents for that
-     diagnostic (`-fallow-argument-mismatch`, `-fallow-invalid-boz`,
-     `-std=legacy`).
-   * a missing tool (`fypp`, a specific compiler) — install it, or record it
-     as a `prepare` op when it is a step the project itself needs.
-2. **Make the fix idempotent, and reproducible.** Two kinds:
-   * a **source patch** (a Makefile, a build file) -> a `prepare` op with
-     `check` (a shell line that exits 0 when the fix is ALREADY there) and
-     `run` (the line that applies it). It is then recorded in the protocol, so
-     a fresh checkout reproduces the build and a repeat pays nothing.
-   * a **build flag** -> part of the `--build` line you pass.
-3. **Confirm by re-running the whole proof.** If the build still fails, the
-   diagnosis was wrong: say so and try the next reading. **Never record a fix
-   that did not make the build work.**
-4. **Nothing is guessed.** A fix you cannot confirm, or a `check` you cannot
-   write, is not a fix — it is a change to the project the next reader cannot
-   reproduce.
+* `No rule to make target '..\bd\dpdcbd.o'` — a Makefile spelling target paths
+  with BACKSLASHES (Windows). The slashed path names a real file, the
+  backslashed one does not.
+* `Error: Type mismatch between actual argument ...` / `BOZ constant ...
+  nonstandard postfix syntax` — today's gfortran rejects a Fortran dialect the
+  project was written in; gfortran documents a flag to allow it
+  (`-fallow-argument-mismatch`, `-fallow-invalid-boz`, `-std=legacy`).
+* a missing tool the build calls.
+
+An answer is either `native_commands` (the commands that DO build it) or
+`prepare_ops` (patches it needs first — each `{op, check, run}`, idempotent; a
+build script is part of the source, so editing one IS a patch). A fix you
+cannot confirm is not a fix.
+
+**Your part stays one step earlier: the commands in the first place.** If the
+project is not CMake, say so on the command line, or the flow is refused at
+`cmake -S ...` — a failure that reads as "this project does not build" when the
+truth is that nobody told it how.
 
 ### When the cases run but every one reports nothing
 
@@ -156,19 +160,20 @@ config* before it will run does not fail — it exits 0 and writes nothing, and
 that reads as a broken project instead of a missing declaration. The names
 (home variable, config file, the text inside it, the resource directory) are
 facts about THAT project and nothing in the tree can show them, so they are
-**declared**: write them into a `facts.json` beside the source and pass it
-with `--facts`. The capture refuses a declaration that names a resource the
-tree does not have, rather than skipping it, because a run that cannot start
-must never report a difference.
+**declared**. The flow's SEAM D produces exactly this when the plan will not
+run or the reference run captures nothing — you pass `--facts` (and
+`--declaration`, below) only when you already know them. The capture refuses a
+declaration that names a resource the tree does not have, rather than skipping
+it, because a run that cannot start must never report a difference.
 
 `--declaration` is the other half: the file where the project states its
-COMPARISON rules (which lines are volatile, how much numeric slack its
-physics allows). Pass it in; never search for it, because a search that
+COMPARISON rules (which lines are volatile, how much numeric slack its physics
+allows). Pass it in if you have it; never search for it, because a search that
 widened until it found something would find a neighbour's.
 
-Both are per-project research results, exactly like the native build
-commands. Relative paths resolve against the project source, so a facts file
-kept beside the source travels with it.
+Both are per-project research results, exactly like the native build commands.
+Relative paths resolve against the project source, so a facts file kept beside
+the source travels with it.
 
 ## The layout, and the one rule about it
 

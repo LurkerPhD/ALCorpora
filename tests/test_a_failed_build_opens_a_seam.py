@@ -167,8 +167,11 @@ def test_a_protocol_gap_stops_instead_of_retrying(tmp_path: Path, capsys):
     assert 'how this project is built' in err
 
 
-def test_no_agent_means_no_seam(tmp_path: Path):
-    """`--no-agent` closes every seam, and the flow still reports cleanly."""
+def test_an_unreachable_agent_leaves_the_seam_closed(tmp_path: Path):
+    """With no agent reachable, a failed build simply fails — cleanly.
+
+    This IS the fallback: an agent that cannot be run leaves the seam closed,
+    so the step reports the failure it actually had."""
     src = tmp_path / 'tree'
     src.mkdir()
 

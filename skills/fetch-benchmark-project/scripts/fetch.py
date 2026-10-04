@@ -285,12 +285,85 @@ def _language(proto) -> str:
     return max(counts, key=counts.get)
 
 
+def _run_plan(cli, argv) -> tuple[int, str]:
+    """Run the plan, and KEEP what it printed.
+
+    `cli.main` prints the verdict and returns a code. The text is the part a
+    seam needs — which cases differed, and on what — so it is captured rather
+    than left on stdout for a human to find.
+    """
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cli.main(argv)
+    out = buf.getvalue()
+    sys.stdout.write(out)
+    return rc, out
+
+
+class Proof:
+    """Where steps 3-4 got to, as a VALUE.
+
+    The mechanical half reports WHICH STEP failed and what it observed; it
+    does not decide what to do about it, and it does not know that a caller
+    might ask an agent.  That judgement belongs to the driver: this module is
+    the mechanical half, and a seam is the driver's vocabulary, not its own.
+
+    *step* is one of:
+
+      ``'A'``          the protocol does not replay the project — a defect in
+                       the EXTRACTOR, not a fact about the project;
+      ``'plan'``       the captured plan is not executable (the capture was
+                       missing a declaration it cannot derive);
+      ``'ref'``        the reference run captured no goldens;
+      ``'B-project'``  the plan is not green on the project's OWN build — the
+                       project itself may need a patch;
+      ``'B-flat'``     the plan is green on the project but not on the replay
+                       — the protocol and the build disagree.
+    """
+    __slots__ = ('ok', 'step', 'detail', 'columns', 'language')
+
+    def __init__(self, ok: bool, step: str = '', detail: str = '',
+                 columns: 'dict | None' = None, language: str = '') -> None:
+        self.ok = ok
+        self.step = step
+        self.detail = detail
+        self.columns = columns or {}
+        self.language = language
+
+    @property
+    def exit_code(self) -> int:
+        return 0 if self.ok else 1
+
+    def __repr__(self) -> str:
+        return (f'Proof(ok={self.ok!r}, step={self.step!r}, '
+                f'detail={self.detail!r})')
+
+    def __eq__(self, other):
+        if isinstance(other, Proof):
+            return (self.ok, self.step, self.detail) == (
+                other.ok, other.step, other.detail)
+        if isinstance(other, int):
+            # `prove_legal` used to return an exit code directly.  Kept so a
+            # caller comparing against 0/1 still reads correctly.
+            return self.exit_code == other
+        return NotImplemented
+
+    def __hash__(self):
+        return hash((self.ok, self.step, self.detail))
+
+
 def prove_legal(dest: Path, src: Path, build: Path, number: int,
                 src_name: str, remedies: 'list | None' = None,
-                facts: Path | None = None,
+                facts: 'Path | dict | None' = None,
                 declaration: Path | None = None,
-                notes: str = 'fetched from source') -> int:
-    """Steps 3-4: the pipeline. Returns 0 when LEGAL, and records the row.
+                notes: str = 'fetched from source') -> Proof:
+    """Steps 3-4: the pipeline.  Returns what happened; records nothing.
+
+    Recording is the CALLER's, because a caller that can open a seam may
+    repair a failure and reach a verdict — and a row written here would
+    report the intermediate failure as the outcome.
 
     *notes* says what THIS admission is.  A re-prove passes nothing, so the
     row keeps the description it already had instead of every replay
@@ -302,24 +375,15 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
     from protocolize.verification_plan import VerificationPlan
     from protocolize.verify import cli
 
-    def fail(why, **cols):
-        print(f'NOT LEGAL — {why}', file=sys.stderr)
-        # The VERDICT columns only, plus `language` when this run actually
-        # learned it.  Anything not passed keeps whatever the row already
-        # said — a run that failed before reading the sources must not blank
-        # a column it never measured.
-        record_row(number, src_name, native='yes', **cols, notes=why)
-        return 1
-
     work = dest / '.work'
     try:
         proto, report = extract_and_prove(build, tree_root=src, work_root=work)
     except ExtractionError as exc:
-        print(f'NOT LEGAL — §A failed (the protocol does not replay the '
-              f'project):\n{exc}', file=sys.stderr)
-        return fail('protocol does not replay the project',
-                    build_protocol_a='no', verify_on_project_b='no',
-                    verify_on_replay_b='no')
+        return Proof(False, 'A',
+                     '§A failed (the protocol does not replay the project):\n'
+                     + str(exc),
+                     {'build_protocol_a': 'no', 'verify_on_project_b': 'no',
+                      'verify_on_replay_b': 'no'})
     print(f'  §A: {report.compared} products compared, OK')
 
     # RECORD the remedies that made the build work as PREPARE ops: they
@@ -339,13 +403,12 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
     plan = VerificationPlan.from_json(data)
     lang = _language(proto)
     if plan.problems():
-        print('NOT LEGAL — §B: the captured plan is not executable:\n  '
-              + '\n  '.join(plan.problems()), file=sys.stderr)
-        record_row(number, src_name, language=lang, native='yes',
-                   build_protocol_a='yes', verify_on_project_b='no',
-                   verify_on_replay_b='no', status='FAIL_B_PLAN',
-                   notes='captured plan is not executable')
-        return 1
+        return Proof(False, 'plan',
+                     'the captured plan is not executable:\n  '
+                     + '\n  '.join(plan.problems()),
+                     {'build_protocol_a': 'yes', 'verify_on_project_b': 'no',
+                      'verify_on_replay_b': 'no', 'status': 'FAIL_B_PLAN'},
+                     lang)
     plan.save(dest / 'verification_plan.json')
 
     origin = dest / 'origin_release'
@@ -366,45 +429,54 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
         env.tree = src.resolve()
         goldens = suite.ensure_reference(plan, env)
         if goldens == 0:
-            return fail('reference run captured no goldens',
-                        language=lang, build_protocol_a='yes',
-                        verify_on_project_b='no', verify_on_replay_b='no',
-                        status='FAIL_B_REF')
+            return Proof(False, 'ref', 'reference run captured no goldens',
+                         {'build_protocol_a': 'yes',
+                          'verify_on_project_b': 'no',
+                          'verify_on_replay_b': 'no',
+                          'status': 'FAIL_B_REF'}, lang)
         print(f'  captured {goldens} goldens from the reference run')
 
-    rc = cli.main([str(dest), '--tree', str(src), '--origin', str(origin)])
+    rc, out = _run_plan(cli, [str(dest), '--tree', str(src),
+                              '--origin', str(origin)])
     if rc != 0:
-        return fail(f"§B failed on the project's own build (exit {rc})",
-                    language=lang, build_protocol_a='yes',
-                    verify_on_project_b='no', verify_on_replay_b='no',
-                    status='FAIL_B_REF')
+        # WHAT failed travels with the verdict.  Measured: a §B failure was
+        # reported to the agent as nothing but "the project's own build (exit
+        # 1)", so it could not tell a build that needed porting from 132 cases
+        # differing on a timestamp — and it answered with patches for the
+        # former.  A seam asked to fix something must be told what is wrong.
+        return Proof(False, 'B-project',
+                     f"§B failed on the project's own build (exit {rc})\n"
+                     + out[-4000:],
+                     {'build_protocol_a': 'yes', 'verify_on_project_b': 'no',
+                      'verify_on_replay_b': 'no', 'status': 'FAIL_B_REF'},
+                     lang)
     print("  §B: green on the project's own build")
 
     flat = work / 'tree'
     proto.save(flat / 'protocol.json')
     shutil.copy2(dest / 'verification_plan.json',
                  flat / 'verification_plan.json')
-    rc = cli.main([str(flat), '--tree', str(flat), '--origin', str(origin)])
+    rc, out = _run_plan(cli, [str(flat), '--tree', str(flat),
+                              '--origin', str(origin)])
     if rc != 0:
-        return fail(f'§B failed on the REPLAY (exit {rc})', language=lang,
-                    build_protocol_a='yes', verify_on_project_b='yes',
-                    verify_on_replay_b='no', status='FAIL_B_FLAT')
+        return Proof(False, 'B-flat',
+                     f'§B failed on the REPLAY (exit {rc})\n' + out[-4000:],
+                     {'build_protocol_a': 'yes', 'verify_on_project_b': 'yes',
+                      'verify_on_replay_b': 'no', 'status': 'FAIL_B_FLAT'},
+                     lang)
     print('  §B: green on the replay — the two verdicts agree')
 
     shutil.rmtree(work, ignore_errors=True)
-    row = dict(language=lang, native='yes', build_protocol_a='yes',
-               verify_on_project_b='yes', verify_on_replay_b='yes',
-               status='PASS')
+    columns = dict(language=lang, native='yes', build_protocol_a='yes',
+                   verify_on_project_b='yes', verify_on_replay_b='yes',
+                   status='PASS')
     # Only a FIRST admission gets to label the row.  A re-prove reached the
     # same verdict about the same project, so it must not overwrite what the
     # row says the project IS — measured: replaying a tracked in-tree sample
     # relabelled it "fetched from source", which is false about it.
     if notes:
-        row['notes'] = notes
-    record_row(number, src_name, **row)
-    print(f'LEGAL: benchmark/{dest.name}/ holds the source, protocol.json, '
-          f'verification_plan.json')
-    return 0
+        columns['notes'] = notes
+    return Proof(True, 'legal', 'LEGAL', columns, lang)
 
 
 #: Directories a benchmark folder holds that are OUTPUT, not the checkout.

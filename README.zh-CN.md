@@ -86,16 +86,16 @@ import 它——所以 layer 1 永远不会反过来去够 layer 2。
 
 ## 交付流程
 
-一次准入,从头到尾。**`[AGENT]` 是只有泛化才能给出的判断;`[PY]` 是工具确定性执行的
-一步。** agent 只在**工具停下来**的地方被调用,下面每一处都写明了它该产出什么——以及
-它**绝不该**做什么。
+一次准入,从头到尾。**`[PY]` 是工具确定性执行的一步;`[SKILL]` 是调用方给出的
+逐项目知识;`SEAM`(接缝)是一步**失败**时流程自己去问 agent 的地方——而且只有在
+"把它给的答案拿去重跑、那一步真的过了"之后才采纳。
 
 ```python
 ADMIT_ONE_PROJECT(source):
-    # [AGENT] A1 —— 唯一一个"每个项目都必然要泛化"的步骤
-    A1  configure, build, test, tree_subdir = research_how_it_builds(source)
+    # [SKILL] A1 —— 逐项目的构建命令:关于**那个项目**的知识
+    A1  configure, build, test, tree_subdir = how_it_builds(source)
 
-    # [PY] 一次调用;以下整条管线都是确定性的
+    # [PY] 一次调用;以下管线是**脚本**,只在某步失败时由流程打开 SEAM
     P1  调用:  python3 bench.py {fetch <source> | admit <dir>} <args...>
     P2  n, dest = 最小空缺编号, benchmark/{n:03d}-{name}
     P3  fetch(source -> dest/inner)              # clone/copy,带重试;submodule
@@ -106,66 +106,49 @@ ADMIT_ONE_PROJECT(source):
     # P5-P6 原生:项目自己的工具链、自己的验证
     P5  应用 prepare_ops                         # 幂等 {op, check, run}
     P6  跑 (configure, build, test)              # 项目自己的命令
-        失败 -> A6
+        失败 -> SEAM A
 
     # P7-P8 §A:构建协议,靠"重放它"来证明
     P7  proto = extract_protocol(build)          # 问构建系统自己的子工具
-        拒绝 -> A7
-    P8  self_check(proto)                        # 镜像;删生成物**和产物**;
-                                                 # flat_cmake;按符号比对
-        拒绝 -> A7
+    P8  self_check(proto)                        # 镜像;删生成物**和产物**
+        读不了 / 重放不出来 -> 工具缺口           # 扩抽取器规则 + 一个测试
 
-    # P9 验证协议:从项目自己的声明里读出来
+    # P9 验证协议:从项目自己的声明里读
     P9  plan = capture_verification(proto, declaration, facts)
-        有问题 -> A9
+        不可执行 -> SEAM D
 
     # P10 golden 是"做出来"的,绝不"借来"
     P10 goldens = ensure_reference(plan)         # 仅 reference_run
-        若为 0 -> A10
+        若为 0 -> SEAM D
 
     # P11-P12 §B 跑两次:项目构建上 与 重放上 的裁决必须**一致**
-    P11 verify(project)                          # 失败 -> A11
-    P12 verify(replay)                           # 失败 -> A12
+    P11 verify(project)      失败 -> SEAM E
+    P12 verify(replay)       失败 -> 工具缺口     # 协议与构建不一致
 
     P13 record(PASS, language, notes)            # 只有走到这里才算 legal
 
 
-# ══ [AGENT] 只在**工具停下来**的地方被调用;每次都只产出"数据" ══════════════
+# ══ SEAM(接缝):流程停下,问 agent,**只采纳"重跑能证明"的答案** ══════════
 
-A6  JUDGE_BUILD_FAILURE(log):
-        读 log;诊断;修法二选一:
-            prepare_op {op, check, run}   # 写进项目树 = 补丁;必须幂等
-            build_flag                    # 调用层适配,不算补丁
-        重跑 P5                           # 没让构建通过的修复**不记录**
-        若定不出可确认的修法 -> BLOCKED
+SEAM(seam_id, what_failed):
+    answer = ask_agent(seam_id, what_failed)     # 类型化契约(seams.KINDS)
+    if answer.kind == protocol_gap:
+        上报并停止                               # 协议本身要扩;绝不重试
+    adopt(answer); 重跑刚才失败的那一步          # **那一步过了**才被采纳
+    同一次运行里,同一个失败不会问第二遍;轮数有界
+    agent 不可达 -> 接缝关闭,该步照原样失败
+        # agent 不可达**永远不是**项目的裁决
 
-A7  JUDGE_EXTRACTION_FAILURE(exc):
-        "协议错了"                -> 改传给工具的参数
-        "工具读不了这种构建"      -> 扩 extract.py 里那条规则 + 一个测试
-                                     # **绝不**手写一份协议绕过
-
-A9  JUDGE_PLAN(problems):
-        声明错/缺                 -> 写项目自己的声明
-        捕获器读不了这种声明形状  -> 扩 capture_verification + 一个测试
-                                     # **绝不**手写一份计划绕过
-
-A10 JUDGE_NO_GOLDENS():
-        写 facts.json             # 程序"能跑起来"所需、但树里看不出的事实
-
-A11 JUDGE_B_PROJECT(printed):
-        P11a python3 bench.py evidence --shift-date   # [PY] 跑两次参考,第二次改 TZ
-        P11b 对每条被报为"未覆盖"的行形状:识别类别 -> 把规则写进项目自己的声明
-             # drop | keep | mask;默认 mask;同行有被判量时**绝不 drop 整行**
-        P11c 重新捕获;重新测量(必须为空);在**重新捕获**的 golden 上重验
-             # **绝不**把一条差异"归为合理"就放过
-
-A12 JUDGE_B_FLAT(printed):
-        项目上绿、重放上不绿 -> 是**工具**错了,不是项目
+# 三个接缝,各自接受什么:
+#   A  P6 失败(构建/验证)          -> native_commands | prepare_ops
+#   D  P9/P10(计划 / 无 golden)     -> facts | declaration
+#   E  P11 失败(项目上的 §B)        -> prepare_ops | facts | declaration
+# 任一接缝都可改答 protocol_gap:"协议表达不了这件事"
 ```
 
 ### 每一步在做什么
 
-**`[PY]` —— 管线(确定性;不询问 agent)。**
+**`[PY]` —— 管线(脚本;P6/P9/P10/P11 失败时打开接缝)。**
 
 * **P1** `bench.py {fetch|admit}` —— 单一入口。`fetch` 是首次准入(编号、取源、
   证明);`admit` 是重证一个已在 `benchmark/` 里的。合成一个命令,流程就只有一份定义。
@@ -181,7 +164,7 @@ A12 JUDGE_B_FLAT(printed):
 * **P5** 应用 prepare ops —— agent 诊断出来的补丁,每条 `{op, check, run}` 且幂等:
   `check` 决定是否已经打过,重复执行不花钱。
 * **P6** 项目自己的构建与验证 —— 即逐项目的命令(A1)。失败就**停在这里**,
-  把打印出来的日志交给 A6。
+  失败就打开 SEAM A,打印出来的日志随之交过去。
 * **P7** 抽取协议 —— **问构建系统自己的子工具**(`ninja -t compdb`、`make -Bn`),
   **绝不解析清单文件**。选哪个后端由树里持有什么决定。
 * **P8** 证明它 —— 镜像树、删掉生成源**和产物**(逼重放去"做"出来)、**只从协议**
@@ -197,27 +180,32 @@ A12 JUDGE_B_FLAT(printed):
   不一致就是**协议**的错。
 * **P13** 记行。只有走到这里,项目才算 legal。
 
-**`[AGENT]` —— 只在工具停下来处进入,且每次都只产出"数据"。**
+**接缝(SEAM)—— 流程停下,问 agent,只采纳"重跑能证明"的答案。**
 
-* **A6** 原生构建/验证失败 —— 读日志、诊断,产出其一:`prepare` op(写进项目树,
-  所以**它就是补丁**,且必须幂等、带 check)或 build flag(调用层适配,不算补丁)。
-  重跑。**没让构建通过的"修复"绝不记录。**
-* **A7** §A 拒绝 —— 要么协议/参数错了,要么工具读不了这种构建。后者是**工具缺口**:
-  扩那条规则 + 一个测试。**手写一份协议绕过是被禁止的。**
-* **A9** 计划不可执行 —— 要么项目的声明错/缺,要么捕获器读不了它声明的形状。
-  后者是**工具缺口**:扩 `capture_verification` + 一个测试。
-* **A10** 参考跑什么都没采到 —— 程序**能跑起来**需要树里看不出的事实(home 目录、
-  资源目录、程序配置)。写进 `facts.json`。
-* **A11** golden 对比出现差异 —— **测量**它(`bench.py evidence --shift-date`,
-  跑两次参考),识别每条在动的行形状,把规则写进**项目自己的**声明
-  (`drop`/`keep`/`mask`,优先 `mask`)。然后重新捕获、重新测量(必须为空)、
-  在**重新捕获**的 golden 上重验。**绝不把一条差异"归为合理"就放过。**
-* **A12** 项目上绿、重放上不绿 —— 协议与构建不一致,是**工具**的错,不是项目。
+接缝是"确定性的某一步失败了、而没有规则能决定怎么办"的地方。**流程自己去开它**:
+把失败和树交给 agent,拿回一个**类型化**答案 —— 而这里最吃重的一点是:**只有把它拿去
+重跑、那一步真的过了,才采纳。** 没让那一步通过的答案,会被"那一步又失败"推翻,所以
+没有任何东西是凭 agent 一句话被接受的。同一次运行里同一个失败不会问第二遍,轮数有界。
 
-**每个项目都要付的那一步,只有 `research_how_it_builds`**:一个项目的原生工具链是
-**关于那个项目**的知识,把猜测编码进工具就是把项目知识推进了工具。agent 其余所有动作
-都由**工具停下来**触发,产出的都是**数据**——一个 prepare op、一条事实、一条规则,或
-一条被扩写的规则——**从不是流程的一步**。
+* **SEAM A**(P6 失败)—— 构建或验证没过。接受 `native_commands`(真正能建它的命令)
+  或 `prepare_ops`(它先要打的补丁,每条 `{op, check, run}`,幂等)。
+  **没让构建通过的"修复"绝不记录。**
+* **SEAM D**(P9/P10)—— 计划不可执行,或参考跑什么都没采到。接受 `facts`(程序
+  **能跑起来**需要、而树里看不出的事实:home 目录、资源目录、程序配置)或
+  `declaration`(项目**自己的**比较规则:`drop`/`keep`/`mask`、`rtol`/`atol`)。
+* **SEAM E**(P11)—— §B 在项目自己的构建上不绿。接受 `prepare_ops`、`facts` 或
+  `declaration` —— 一个能靠补丁解决的项目问题。
+
+任一接缝都可以改答 **`protocol_gap`**:"协议表达不了这件事"。它**不重试、不猜**:流程
+记录后停下,因为扩协议是**工具**的事,不是 agent 的事。
+
+**不是所有"停下"都是接缝。** §A 读不了这种构建、或重放与项目不一致 —— 那是**工具**的
+缺口,答案是把抽取器/比较器**扩一条规则 + 一个测试**,绝不手写一份协议或计划绕过去。
+接缝够不到 agent 时同理:该步照原样失败,而那**永远不是**项目的裁决。
+
+**唯一不归接缝管的一步是 `research_how_it_builds`(A1)** —— 一个项目的原生工具链是
+**关于那个项目**的知识,把猜测编码进工具就是把项目知识推进了工具。它由调用方提供,
+和项目自己的声明完全同类。
 
 ---
 

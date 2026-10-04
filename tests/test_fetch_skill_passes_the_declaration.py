@@ -110,7 +110,7 @@ def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
             mock.patch('protocolize.onboard.extract.capture_verification',
                        side_effect=fake_capture), \
             mock.patch('protocolize.verify.cli.main', return_value=0):
-        rc = admit.main([str(dest), '--readmit', '--no-agent',
+        rc = admit.main([str(dest), '--readmit', '--agent-cmd', 'false',
                          '--declaration', 'rules.json'],
                         namespace=fetch.__dict__)
 

@@ -165,7 +165,7 @@ def test_a_patch_that_does_not_build_is_refused(tmp_path: Path):
     assert not proof.ok, 'a patch that breaks the build must not be accepted'
 
 
-def test_no_agent_closes_every_seam(tmp_path: Path):
+def test_an_unreachable_agent_just_fails_the_step(tmp_path: Path):
     proof, args, M = _run(tmp_path, [(False, 'plan')], None)
     assert not proof.ok
     assert proof.step == 'plan'
