@@ -219,7 +219,7 @@ is `<Project>_Validation` only works when the checkout sits at `<Project>/`.
 When the two are fetched separately, place them as siblings:
 
 ```
-benchmark/012-MYSTRAN/
+benchmark/013-MYSTRAN/
    MYSTRAN/              <- the checkout, named after the project
    MYSTRAN_Validation/   <- its suite, a sibling
 ```

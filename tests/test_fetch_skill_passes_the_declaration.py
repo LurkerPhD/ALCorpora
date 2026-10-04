@@ -62,10 +62,21 @@ _PLAN = {
 
 
 def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
+    """Driven through the entry point, because RECORDING moved to the driver.
+
+    `prove_legal` used to write the row itself. It no longer does: a caller
+    that can open a seam may repair a failure and reach a verdict, so a row
+    written inside the mechanical half would report the intermediate failure
+    as the outcome. The driver records; this test drives the driver.
+    """
+    import admit
+
     fetch = _load_fetch()
     dest = tmp_path / '003-thing'
     src = dest / 'thing'
     src.mkdir(parents=True)
+    # One found beside the source, one named on the command line: both routes
+    # have to arrive.
     (src / 'facts.json').write_text('{"preparation": {}}', encoding='utf-8')
     (src / 'rules.json').write_text('{}', encoding='utf-8')
 
@@ -91,15 +102,17 @@ def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('[]', encoding='utf-8')
 
-    with mock.patch.object(fetch, 'BENCH_CSV', csv), \
-            mock.patch('protocolize.onboard.extract.extract_and_prove',
-                       return_value=(_Proto(), mock.Mock(compared=0))), \
+    fetch.BENCH_CSV = csv
+    fetch.native = lambda s, a: (True, '', [])
+
+    with mock.patch('protocolize.onboard.extract.extract_and_prove',
+                    return_value=(_Proto(), mock.Mock(compared=0))), \
             mock.patch('protocolize.onboard.extract.capture_verification',
                        side_effect=fake_capture), \
             mock.patch('protocolize.verify.cli.main', return_value=0):
-        rc = fetch.prove_legal(dest, src, src, 3, 'thing',
-                               facts=fetch._declared('facts.json', src),
-                               declaration=fetch._declared('rules.json', src))
+        rc = admit.main([str(dest), '--readmit', '--no-agent',
+                         '--declaration', 'rules.json'],
+                        namespace=fetch.__dict__)
 
     assert rc == 0, 'the walk-through must finish'
     assert seen.get('facts') == src / 'facts.json', (
