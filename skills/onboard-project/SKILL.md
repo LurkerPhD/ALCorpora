@@ -117,12 +117,21 @@ failed.** Two outcomes, and they are different:
 * **the protocol is wrong** — fix it, and this is almost always the case. A
   wrong protocol is not a wrong answer; it is a wrong answer multiplied by
   every build that follows.
-* **the extractor cannot read this build** — a TOOL gap. The rules it applies
-  are documented where they live, each with the measurements behind it:
-  `protocolize/onboard/extract.py` (`units`/`_units`, `_products`,
-  `_generated`, `own_roots_for`, `capture_prepare`) and
-  `protocolize/tree_anchor.py` (the `${TREE}` spelling). Extend the rule that
-  is actually wrong, with a test; do not special-case a project.
+* **the extractor cannot read this build** — a TOOL gap. Extend the rule that
+  is wrong, with a test; do not special-case a project.
+
+**What "cannot read this build" actually is, concretely** — each of these is a
+refusal the tool raises, and the CATEGORY decides who fixes it:
+
+| the refusal | whose problem |
+|---|---|
+| `does not answer "what would you run?"` — no `build.ninja`, no `CMakeCache.txt`, no Makefile the backends know | **TOOL**: a backend for this build system |
+| `the build has no compile rules` — it answered, but the answer had no compile edge | **TOOL**: the backend reads the wrong sub-tool |
+| `ninja did not report a command producing <t>` / the output did not parse | **TOOL**: the reader of that sub-tool's output |
+| `N stem(s) are claimed by more than one source` | the STEM rule; a refusal by design (dropping one silently would lose a unit) — **TOOL** if the corpus is honest, since the identity rule is the tool's |
+| `no translation units were found` | **TOOL** or a genuinely empty build |
+| `A=… is relative; the tree root decides` | the tool's own inputs — **TOOL** |
+| the build sub-tool itself FAILED | the build is broken — **the project** |
 
 The four ways a proof has actually failed, all silently — read them before
 concluding your protocol is right, and read the code above for how each is
@@ -160,13 +169,21 @@ empty plan is not a neutral answer.
 **Two outcomes when it refuses, and they are different — the same split the
 build half has:**
 
-* **the declaration is wrong or missing** — the common case. Put the
-  project's statement where the capture reads it and pass it in.
-* **the capture cannot read a shape this project declares** — a TOOL gap.
-  Extend `capture_verification` in `protocolize/onboard/extract.py`, with a
-  test, so the next project with that shape is read too. **Do NOT hand-write
-  the plan instead**: a plan typed by hand is a value nobody can re-derive,
-  and the extractor keeps the gap for every project after this one.
+* **the declaration is wrong or missing** — the common case. Concretely: the
+  declaration is not JSON-of-VALUES (a corpus that states its rules as code is
+  refused by name, never executed); a restart catalogue names cases the tree
+  does not have; a declared resource directory or config file is not under the
+  tree; a substitution or config env var with no `config_glob` to apply it to.
+  Put the project's statement where the capture reads it.
+* **the capture cannot read a shape this project declares, or cannot find any
+  verification at all** — a TOOL gap. Concretely: `declares no way to verify a
+  run` (no registered tests, no case list, no per-case directory); or
+  `ambiguous: N acceptance declarations are reachable` — a refusal by design,
+  since picking one silently verifies the corpus against another project's
+  cases. Extend `capture_verification` in `protocolize/onboard/extract.py`,
+  with a test, so the next project with that shape is read too. **Do NOT
+  hand-write the plan instead**: a plan typed by hand is a value nobody can
+  re-derive, and the extractor keeps the gap for every project after this one.
 
 Two things ARE yours, because they are about where you put things:
 
