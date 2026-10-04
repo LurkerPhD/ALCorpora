@@ -259,10 +259,10 @@ Four defects it has actually caught, each of which fails SILENTLY:
 ## The OTHER half: how the project says a run was CORRECT
 
 A protocol answers "how is this built?".  The flow also asks "how do we know a
-run of it was right?", and that is a **separate artifact**, `verification_plan.json`,
-produced by the SAME onboarding pass and committed the same way (gzipped,
-expanded on use).  It is one mechanism for every project, so getting it right
-is the same kind of work as the protocol and getting it wrong costs the same.
+run of it was right?", and that is a **separate artifact**,
+`verification_plan.json`, produced by the SAME onboarding pass and committed
+the same way (gzipped, expanded on use).  Read this whole half before starting
+it, then follow the steps in order.
 
 **`reference/verification-plan-template.json` is the shape to fill in.**  It is
 an annotated plan: every section carries a `_README` explaining what the field
@@ -272,31 +272,10 @@ measurement only this project can make.  Stripping every `_`-prefixed key
 leaves a plan `problems()` accepts, and a test pins that, so the template
 cannot teach a shape the mechanism refuses.
 
-**The deliverable is the filled-in JSON.**  Two ways to produce it, in this
-order of preference:
+### V1. Ask the project how it says a run is correct — do not infer it
 
-1. **Extract it.**  `protocolize/onboard/extract.py` implements the reading of
-   all three case shapes, the record layout, the comparison rules and the
-   preparation facts — the call is in "Running it" below.  Extend it when the
-   project declares something it does not yet read: an extractor that reads
-   the project's own declaration is the whole point, and a value typed by hand
-   is a value nobody can re-derive.
-2. **Write it, then PROVE it.**  When the project's declaration has a shape the
-   extractor cannot read, fill the template in directly — and then make the
-   proof: `VerificationPlan.problems()` must return `[]`, and
-   `python3 -m protocolize.verify.cli <build tree>` must give the same
-   verdict the project's own benchmark gives.  A plan that merely loads is not
-   a plan that judges.
-
-Either way the facts that are NOT derivable from the tree — a restart chain,
-the preparation a program needs in order to run — go in the project's own
-facts file beside its other onboarding inputs
-(`a facts declaration`), passed IN to the
-capture, with `_comment` recording where each came from.
-
-**Ask the project how it says a run is correct — do not infer it from the
-outputs.**  Three declarations exist in practice, and they are told apart by
-what the project HAS, never by its name:
+Three declarations exist in practice, and they are told apart by what the
+project HAS, never by its name:
 
 | the project has | the plan says | who judges |
 |---|---|---|
@@ -352,20 +331,7 @@ is refused when it could produce a verdict with nothing behind it:
   `golden.source: reference_run` — that names a file the PROJECT SHIPPED, not
   one a run produced.  See "The golden is made, never borrowed" below.
 
-**The golden is made, never borrowed.**  A repository supplies **input files**;
-the tool runs the native build to make the golden.  That is what
-`reference_run` means, and it is not a formality: a corpus that ships its own
-reference output usually produced it on another machine, another compiler and
-another operating system — one old corpus's shipped `.out` files all carry a
-1995 banner from an OS this machine does not have, and not one of its 132 cases
-is byte-identical to what the same decks produce here.  Using those as goldens
-would turn a real comparison into a fixture nothing can satisfy, and worse, a
-build that merely copied a stale file would "pass".
-
-So the repository's own reference output is an **input**, and comparing against
-it — a legitimate thing to want — belongs in the project's `declaration`, never
-in `golden`.  `golden.root` is therefore restricted to a run output root
-(`{origin}`, `{results}`); anything else is refused when the plan is read.
+### V2. Write the plan, then make the reference
 
 **The origin is one rule for every project**: run the REFERENCE instance
 through this same plan and keep what the plan calls golden.  The reference and
@@ -389,7 +355,37 @@ the reader.  `--facts` is optional and only some projects need it; leaving it
 out when it is needed is caught downstream, because the cases then run and
 report nothing.
 
-### Two runs of one program: what legitimately differs
+### V3. The golden is made, never borrowed
+
+A repository supplies **input files**;
+the tool runs the native build to make the golden.  That is what
+`reference_run` means, and it is not a formality: a corpus that ships its own
+reference output usually produced it on another machine, another compiler and
+another operating system — one old corpus's shipped `.out` files all carry a
+1995 banner from an OS this machine does not have, and not one of its 132 cases
+is byte-identical to what the same decks produce here.  Using those as goldens
+would turn a real comparison into a fixture nothing can satisfy, and worse, a
+build that merely copied a stale file would "pass".
+
+So the repository's own reference output is an **input**, and comparing against
+it — a legitimate thing to want — belongs in the project's `declaration`, never
+in `golden`.  `golden.root` is therefore restricted to a run output root
+(`{origin}`, `{results}`); anything else is refused when the plan is read.
+
+
+### V4. Run §B on the project AND on the replay
+
+Two runs decide the plan, and BOTH must reach the same verdict:
+
+```bash
+python3 bench.py verify <benchmark dir>       # §B on the project's own build
+python3 bench.py admit  <benchmark dir> --…   # §B on the project AND the replay
+```
+
+A pass on the project alone is not the proof: the plan must also be green on the
+build the PROTOCOL produces, or the two artifacts disagree.
+
+### V5. If a golden comparison differs, stabilize it by MEASUREMENT
 
 **This applies only when the check COMPARES two texts against a golden** —
 the plan's `text_lockstep` and `field_assertion`.  A `self_report` reads
@@ -400,9 +396,24 @@ plan schema refuses such a key by name).
 
 A project that compares a fresh run against a golden will show differences
 that are **not** differences in what it computed.  They come from the RUN.
-Recognize the category, then write a rule for it — the rule goes in the
-project's own declaration (`declaration.json`, `comparison`), never in the
-tool.
+Do this in order:
+
+**Step 1 — MEASURE. Do not eyeball the output.**
+
+```bash
+python3 bench.py evidence <benchmark dir> --shift-date
+```
+
+This runs the reference TWICE (the second under a shifted clock, so
+calendar-derived lines move too) and prints the line SHAPES that moved and
+that the plan's own `drop`/`keep`/`mask` do **not** yet cover. Those shapes are
+the work list. Two limits are stated by the tool itself: it is a **lower
+bound** (a line that happened to agree is invisible), and a shape is evidence
+of a **mechanism** (a timer block, a pool report), not of one line.
+
+**Step 2 — recognize the category**, using the table below, then confirm it
+against what Step 1 actually reported. The table is HYPOTHESES; the
+measurement is the evidence.
 
 | category | what the line looks like |
 |---|---|
@@ -417,6 +428,15 @@ tool.
 | **concurrency order** | lines, or a float SUM, whose order depends on scheduling |
 | **uninitialized / padding** | bytes never assigned; stack garbage in a hex dump |
 | **build / version stamps** | a compiler version string, a build date, a VCS revision, "built by" |
+
+**Step 3 — write a rule for each shape, into the project's own declaration**
+(`declaration.json`, under `comparison`), never into the tool. Prefer `mask`
+over `drop`.
+
+**Step 4 — re-MEASURE.** Re-capture (the declaration is read at capture time)
+and run `bench.py evidence` again; it must report nothing left uncovered, and
+the verdict must hold on a **fresh capture** — a single PASS proves nothing
+about an intermittent difference.
 
 **Deliberately NOT on this list: near-zero floating-point noise** (a residual
 around `1e-18` whose sign is meaningless).  That is not a run-dependency — it
@@ -445,34 +465,6 @@ times, and see whether the values are then all different.
 Such a field almost always shares its line with stable, meaningful values, so
 it must be **`mask`ed, not dropped** — dropping the line stops comparing the
 rest of it too.
-
-#### How to find which lines actually move
-
-Do not eyeball the output.  Measure it — the same binary, twice, and the
-second run under a shifted clock:
-
-```bash
-python3 bench.py evidence <build dir> --shift-date
-```
-
-It reports the line SHAPES that moved between the two runs and that the plan's
-own `drop`/`keep`/`mask` do **not** yet cover: exactly what a rule still has to
-account for.  Then write the rule, preferring `mask` over `drop` — `drop`
-silences everything on the line, and if any of it is judged, the gate just got
-quieter.
-
-Two limits to hold onto.  **A two-run diff is a LOWER BOUND**: a line that
-happened to agree this time is invisible, so read the project's own comparison
-rules too if it ships any.  And **several lines from one MECHANISM move
-together** (a timer block, a pool report): a rule written for the one line you
-saw leaves the rest — write it against the mechanism.
-
-#### Then re-measure; a single PASS proves nothing
-
-After editing the declaration, re-capture (the declaration is consumed when
-the plan is captured) and run it again.  `bench.py evidence` must come back
-with nothing left uncovered, and the verdict must hold on a **fresh capture**
-— the difference is intermittent by nature, so one green run can be luck.
 
 **Never classify a diff as "reasonable" and move on.**  That is exactly how a
 real difference gets hidden: an automatic "this looks like a timestamp, skip
