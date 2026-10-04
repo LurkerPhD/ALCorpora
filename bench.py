@@ -17,6 +17,12 @@ only gives them one name and one place to be found.
     bench.py tree    DIR        which directory is the plan's ${TREE}
     bench.py wipe    DIR...     remove this tool's generated artifacts
     bench.py plan    DIR        the plan's problems, and the modes it declares
+    bench.py extract  TREE [--out F]   §A: read the build protocol OUT of a
+                                built tree, and prove it replays
+    bench.py capture  DIR --declaration F [--facts F]
+                                read the verification protocol out of the
+                                project's own declaration
+    bench.py cases    DIR       the case ids the plan discovers
     bench.py verify  DIR        §B: run the plan, print the verdict
     bench.py evidence DIR [--shift-date]
                                 run the reference TWICE and report the line
@@ -234,6 +240,128 @@ def cmd_row(args: list[str]) -> int:
     return 1
 
 
+def cmd_extract(args: list[str]) -> int:
+    """§A: read the build protocol OUT of a built tree, and PROVE it replays.
+
+    The step that used to be an inline `python3 -c "…extract_protocol…"` in a
+    skill document. It is deterministic given a tree — which backend, which
+    units, which products — so it is a command, not a paragraph.
+    """
+    import argparse
+    from protocolize.onboard.extract import ExtractionError, extract_and_prove
+
+    p = argparse.ArgumentParser(prog='bench.py extract',
+                                description=cmd_extract.__doc__.splitlines()[0])
+    p.add_argument('build_dir', help='the build tree')
+    p.add_argument('--tree-root', type=Path, default=None,
+                   help='the tree the units are rooted in (default: build dir)')
+    p.add_argument('--out', type=Path, default=None,
+                   help='where to write the protocol (default: <build>/protocol.json)')
+    p.add_argument('--work', type=Path, default=None,
+                   help='scratch for the proof (default: <build>/.work)')
+    a = p.parse_args(args)
+
+    build = Path(a.build_dir).resolve()
+    tree = Path(a.tree_root).resolve() if a.tree_root else build
+    work = Path(a.work) if a.work else build / '.work'
+    try:
+        proto, report = extract_and_prove(build, tree_root=tree, work_root=work)
+    except ExtractionError as exc:
+        print(f'NOT LEGAL — §A failed (the protocol does not replay the '
+              f'project):\n{exc}', file=sys.stderr)
+        return 1
+    out = Path(a.out) if a.out else build / 'protocol.json'
+    proto.save(out)
+    print(f'§A: {report.compared} product(s) compared, OK')
+    print(f'wrote {out}')
+    return 0
+
+
+def cmd_capture(args: list[str]) -> int:
+    """Read the VERIFICATION protocol out of a project's own declaration.
+
+    The other inline `python3 -c` step. Deterministic given a protocol and a
+    declaration: it stages, discovers cases and builds the assertions, then
+    refuses if `problems()` is non-empty — a plan that merely loads is not a
+    plan that judges.
+    """
+    import argparse
+    from protocolize.onboard.extract import capture_verification
+    from protocolize.private_protocol import Protocol
+    from protocolize.verification_plan import VerificationPlan
+
+    p = argparse.ArgumentParser(prog='bench.py capture',
+                                description=cmd_capture.__doc__.splitlines()[0])
+    p.add_argument('build_dir')
+    p.add_argument('--declaration', type=Path, required=True,
+                   help='the file where the project states its comparison rules')
+    p.add_argument('--protocol', type=Path, default=None,
+                   help='the build protocol (default: <build>/protocol.json)')
+    p.add_argument('--tree-root', type=Path, default=None)
+    p.add_argument('--project-root', type=Path, default=None,
+                   help="the project's own root, for support files "
+                        '(default: the tree root)')
+    p.add_argument('--facts', type=Path, default=None,
+                   help='what the project declares its programs need to RUN')
+    p.add_argument('--out', type=Path, default=None)
+    a = p.parse_args(args)
+
+    build = Path(a.build_dir).resolve()
+    tree = Path(a.tree_root).resolve() if a.tree_root else build
+    proto_path = Path(a.protocol) if a.protocol else build / 'protocol.json'
+    if not proto_path.is_file():
+        print(f'no build protocol at {proto_path} — run `bench.py extract` first',
+              file=sys.stderr)
+        return 1
+    proto = Protocol.load(proto_path)
+    try:
+        data = capture_verification(
+            proto, build, tree,
+            project_root=Path(a.project_root) if a.project_root else tree,
+            declaration=a.declaration, facts=a.facts)
+    except ValueError as exc:
+        # `capture_verification` REFUSES rather than returning an empty plan —
+        # "no registered tests, no case list, no per-case directory" is a
+        # finding, not a crash — and its message names what is missing.  A
+        # caller branching on the exit code must not have to read a stack
+        # trace to learn that.
+        print(f'the project declares no way to verify a run:\n{exc}',
+              file=sys.stderr)
+        return 1
+    data['protocol'] = str(proto_path.name)
+    plan = VerificationPlan.from_json(data)
+    problems = plan.problems()
+    if problems:
+        print(f'the captured plan is NOT EXECUTABLE — {len(problems)} problem(s):',
+              file=sys.stderr)
+        for x in problems:
+            print(f'  {x}', file=sys.stderr)
+        return 1
+    out = Path(a.out) if a.out else build / 'verification_plan.json'
+    plan.save(out)
+    print(f'wrote {out} ({len(plan.assertions)} assertion(s))')
+    return 0
+
+
+def cmd_cases(args: list[str]) -> int:
+    """The case ids a plan discovers, one per line.
+
+    Deterministic and cheap, and useful on its own: a plan that discovers
+    ZERO cases is the failure a whole golden comparison hides behind.
+    """
+    if not args:
+        print('usage: bench.py cases DIR', file=sys.stderr)
+        return 2
+    d = Path(args[0]).resolve()
+    if not (d / 'verification_plan.json').is_file():
+        print(f'no verification_plan.json under {d}', file=sys.stderr)
+        return 1
+    return subprocess.run(
+        [sys.executable, '-m', 'protocolize.verify.cli', str(d),
+         '--tree', str(tree_of(d)), '--list'],
+        cwd=str(REPO)).returncode
+
+
 def cmd_fetch(args: list[str]) -> int:
     """Admit a project for the FIRST time: number it, fetch it, prove it.
 
@@ -266,6 +394,9 @@ def cmd_admit(args: list[str]) -> int:
 # ── dispatch ──────────────────────────────────────────────────
 
 _COMMANDS = {
+    'extract': cmd_extract,
+    'capture': cmd_capture,
+    'cases': cmd_cases,
     'fetch': cmd_fetch,
     'tree': cmd_tree,
     'wipe': cmd_wipe,

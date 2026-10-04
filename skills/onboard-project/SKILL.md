@@ -373,20 +373,21 @@ the candidate therefore traverse the same code path, and "a failed reference
 run captures nothing" is true by construction instead of remembered per
 project.
 
+The capture is a command, not a snippet to reproduce by hand:
+
 ```bash
-python3 -c "
-from pathlib import Path
-from protocolize.onboard.extract import capture_verification
-from protocolize.private_protocol import Protocol
-from protocolize.verification_plan import VerificationPlan
-proto = Protocol.load('<build tree>/protocol_fortran.json')
-plan = VerificationPlan.from_json(capture_verification(
-    proto, '<build tree>', '<build tree>', '<project root>',
-    declaration='<the file that states its comparison rules>'))
-print(plan.problems())          # [] is the only acceptable answer
-plan.save(Path('<build tree>') / 'verification_plan.json')
-"          # run from the deepf2c checkout root
+python3 bench.py capture <build tree> \
+    --declaration <the file that states its comparison rules> \
+    --facts       <what its programs need in order to run, if any> \
+    --out         <where to write verification_plan.json>
 ```
+
+It REFUSES if the plan it would write is not executable, printing every
+problem with `problems()` — so a non-zero exit means the plan is not a plan,
+and `[ ] is the only acceptable answer` is enforced by the tool rather than by
+the reader.  `--facts` is optional and only some projects need it; leaving it
+out when it is needed is caught downstream, because the cases then run and
+report nothing.
 
 ### Two runs of one program: what legitimately differs
 
@@ -481,19 +482,37 @@ and a rule suppresses exactly one measured quantity and nothing else.
 
 ## Available tools
 
-`protocolize/onboard/` holds a working implementation of all of the above for
-ninja and make, and `protocolize/onboard/selfcheck.py` holds the proof. Read
-them as a reference for the method — and as something you may extend, replace
-or ignore if the project in front of you needs a different approach. The
-method above is the contract; those files are one way of meeting it.
+The operations are `bench.py` subcommands — use them, in this order for the
+build half:
 
 ```bash
-python3 -c "
-from protocolize.onboard.extract import extract_protocol
-p = extract_protocol('<build tree>')     # runs the proof, refuses on failure
-p.save('<tree>/protocol_fortran.json')
-"          # run from the deepf2c checkout root
+python3 bench.py extract <build tree> --out <protocol.json>
+# §A: reads the protocol OUT of the built tree and PROVES the replay.
+# Non-zero exit = the protocol does not replay the project; the reason is
+# printed and that reason IS the next thing to fix.
+
+python3 bench.py capture <build tree> --declaration <rules file> [--facts <f>]
+# The verification half: reads the plan out of the project's own declaration,
+# and refuses if the plan is not executable.
+
+python3 bench.py cases <build tree>
+# The case ids the plan discovers, one per line. Run it whenever a golden
+# comparison looks wrong: a plan that discovers ZERO cases is the failure a
+# whole comparison hides behind, and this shows it in one line.
 ```
+
+`protocolize/onboard/` holds the working implementation of all of the above
+for ninja and make, and `onboard/selfcheck.py` holds the §A proof. Read them
+as a reference for the method — and as something you may extend, replace or
+ignore if the project in front of you needs a different approach. The method
+above is the contract; those files are one way of meeting it.
+
+**When an operation you need does not exist as a subcommand, do not write it
+beside one.** Report it: a re-implementation drifts from the original in some
+detail that stays invisible until it bites. Measured twice — a re-derived
+"which directory is the tree" answered wrongly for a checkout with no
+build-system marker at the top, and a re-derived "clear the build" deleted a
+make project's source directory.
 
 ## What this skill does not do
 

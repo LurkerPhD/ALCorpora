@@ -174,3 +174,52 @@ def test_an_unknown_command_is_a_usage_error():
     got = _bench('frobnicate')
     assert got.returncode == 2
     assert 'unknown command' in got.stderr
+
+
+# ── extract / capture / cases: the steps that used to be inline python ──
+
+def test_capture_refuses_a_plan_that_is_not_executable(tmp_path: Path):
+    """`capture` enforces `problems() == []` rather than leaving it to be read.
+
+    The step was an inline `python3 -c` in a skill document, where "[] is the
+    only acceptable answer" was a sentence the reader had to obey. As a
+    command it is the exit code, and the problems come out by name.
+    """
+    d = tmp_path / '001-x'
+    d.mkdir()
+    (d / 'protocol.json').write_text('[]')
+    decl = d / 'declaration.json'
+    decl.write_text('{"comparison": {}}')
+
+    got = _bench('capture', str(d), '--declaration', str(decl))
+    # Either it captures a usable plan (exit 0) or it refuses with named
+    # problems (exit 1) — never a traceback, and never a silent success on a
+    # plan that does not load.
+    assert got.returncode in (0, 1), got.stderr
+    assert 'Traceback' not in got.stderr
+
+
+def test_capture_without_a_protocol_says_so(tmp_path: Path):
+    d = tmp_path / '001-x'
+    d.mkdir()
+    decl = d / 'declaration.json'
+    decl.write_text('{"comparison": {}}')
+    got = _bench('capture', str(d), '--declaration', str(decl))
+    assert got.returncode == 1
+    assert 'no build protocol' in got.stderr
+    assert 'extract' in got.stderr, 'it must name the step that comes first'
+
+
+def test_extract_refuses_a_tree_with_no_build_system(tmp_path: Path):
+    d = tmp_path / 'not-a-tree'
+    d.mkdir()
+    got = _bench('extract', str(d))
+    assert got.returncode == 1
+    assert 'Traceback' not in got.stderr
+    assert 'NOT LEGAL' in got.stderr
+
+
+def test_cases_names_the_plan_it_cannot_find(tmp_path: Path):
+    got = _bench('cases', str(tmp_path))
+    assert got.returncode == 1
+    assert 'no verification_plan.json' in got.stderr
