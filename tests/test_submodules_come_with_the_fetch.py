@@ -120,7 +120,8 @@ def test_native_leaves_submodules_alone(tmp_path: Path):
     fetch = _load_fetch('fetch_skill_submod2')
     ran: list = []
     fetch.run = lambda line, cwd: (ran.append(line), (True, ''))[1]
-    args = SimpleNamespace(prepare_ops=[], configure='c', build='b', test='t')
+    args = SimpleNamespace(prepare_ops=[], configure='c', build='b',
+                           test='t', tree_subdir='.')
     src = tmp_path / 'tree'
     src.mkdir()
     fetch.native(src, args)

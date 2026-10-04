@@ -239,6 +239,39 @@ def _prepare_done(op: dict, src: Path) -> bool:
     return exists if check.get('exists', True) else not exists
 
 
+def _clean_stale_products(src: Path, tree_subdir: str, log: str) -> str:
+    """Remove what a previous build produced, so a changed flag takes effect.
+
+    A build system that tracks its own command needs nothing here: ninja
+    stores the command and re-runs it when it changes, so a CMake+ninja tree
+    rebuilds by itself.  A HAND-WRITTEN Makefile does not — measured: a flag
+    added to a Makefile left every object newer than its source, so the next
+    `make` re-linked them and answered `Nothing to be done`, and a seam that
+    had just fixed the flags was told its fix had failed when the fix had
+    never reached a single file.
+
+    So each Makefile in the tree is asked to clean itself — the project's OWN
+    definition of "built" is the only rule that can know what one is.  It is
+    best-effort, and it runs AFTER the declared ops, because for a project
+    whose `clean` is itself broken the patch that fixes it is one of those
+    ops (a Windows-authored Makefile spells both the build and the clean with
+    the same broken tool — measured: `DELETE = del` beside a commented-out
+    `#LNX DELETE = rm`).
+
+    The step FAILING is not an error: a Makefile with no `clean` target has
+    said what it has to say, and the build that follows reports the truth.
+    """
+    bd = src / tree_subdir
+    if ((bd / 'CMakeCache.txt').is_file()
+            or (bd / 'build.ninja').is_file()
+            or (bd / 'CMakeFiles').is_dir()):
+        return log
+    for mk in sorted(bd.rglob('Makefile')) + sorted(bd.rglob('makefile')):
+        _, out = run(f'make -C {mk.parent} clean', cwd=bd)
+        log += f'$ make -C {mk.parent} clean\n{out[-500:]}\n'
+    return log
+
+
 def native(src: Path, args) -> tuple[bool, str, list]:
     """Build and test the project the way IT builds — steps 1 and 2.
 
@@ -264,6 +297,7 @@ def native(src: Path, args) -> tuple[bool, str, list]:
             # that names the symptom instead of the preparation that was
             # supposed to prevent it.
             return False, log, declared
+    log = _clean_stale_products(src, args.tree_subdir, log)
     for line in (args.configure, args.build, args.test):
         if not line:
             continue
@@ -354,6 +388,55 @@ class Proof:
         return hash((self.ok, self.step, self.detail))
 
 
+def _measured_drops(plan, env, work: Path) -> list:
+    """The volatile line shapes from two reference runs, as `drop` patterns.
+
+    The DETERMINISTIC half of "how are two runs legitimately compared".  Once
+    the verification is known to COMPARE captured output — which is what a
+    `reference_run` golden means — the lines that moved between two runs of
+    one binary ARE the volatile lines, and that is a measurement, not a
+    judgement: no agent is asked.  A second run is made under a shifted `TZ`
+    so calendar-derived lines move too.
+
+    Returns [] when nothing undeclared moved, or when the measurement cannot
+    run at all (a plan that will not load, a run that captures nothing).  A
+    failure here is not a verdict about the project — the seam remains the
+    fallback for whatever a measurement cannot reach.
+    """
+    from protocolize import volatiles
+    try:
+        root_a, root_b = volatiles.capture_twice(plan, env, work,
+                                                 shift_date=True)
+        modes = volatiles.declared_modes(plan)
+        left = volatiles.uncovered(root_a, root_b, modes,
+                                   slack=volatiles.declared_slack(plan))
+    except Exception as exc:                      # noqa: BLE001 — see above
+        print(f'  the volatile measurement could not run ({exc})',
+              file=sys.stderr)
+        return []
+    # A shape beginning `<` is a line-COUNT mismatch, not a line shape: a
+    # difference the rules did not account for is a different kind of thing,
+    # and a `drop` pattern cannot express it.  It is left for the seam.
+    return [volatiles.drop_pattern(v.shape) for v in left
+            if not v.shape.startswith('<')]
+
+
+def _with_drops(plan, drops: list):
+    """*plan* with *drops* appended to every comparison assertion's `drop`.
+
+    A rule is added to the assertions that COMPARE text; a plan whose
+    verification is not a comparison has none, and nothing is added.
+    """
+    out = []
+    for a in plan.assertions:
+        a = dict(a)
+        if a.get('kind') in ('text_lockstep', 'field_assertion'):
+            a['drop'] = list(a.get('drop') or []) + list(drops)
+        out.append(a)
+    plan.assertions = tuple(out)
+    return plan
+
+
 def prove_legal(dest: Path, src: Path, build: Path, number: int,
                 src_name: str, remedies: 'list | None' = None,
                 facts: 'Path | dict | None' = None,
@@ -435,6 +518,19 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
                           'verify_on_replay_b': 'no',
                           'status': 'FAIL_B_REF'}, lang)
         print(f'  captured {goldens} goldens from the reference run')
+        # The verification COMPARES captured output, so MEASURE which lines
+        # two runs disagree on and declare them — unconditionally, before the
+        # verdict, never waiting for a failure to ask.  Waiting was wrong: a
+        # comparison whose volatile lines happen to match (two runs inside one
+        # second) passes with NO rules at all, so the failure that would have
+        # provoked the measurement never came, and the plan kept `drop: []`
+        # while the next minute's run failed on every case.  Measured.
+        drops = _measured_drops(plan, env, dest / '.work' / 'volatiles')
+        if drops:
+            _with_drops(plan, drops)
+            plan.save(dest / 'verification_plan.json')
+            print(f'  measured {len(drops)} volatile line shape(s) from two '
+                  f'runs; declared as `drop` rules')
 
     rc, out = _run_plan(cli, [str(dest), '--tree', str(src),
                               '--origin', str(origin)])

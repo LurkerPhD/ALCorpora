@@ -513,8 +513,9 @@ def _prove_with_seams(M: dict, args, agent, dest: Path, src: Path,
         print(f'  §B: step {proof.step} failed — opening seam {seam}',
               file=sys.stderr)
         before = (tuple(args.prepare_ops or ()), facts, declaration)
-        if not _ask_seam(agent, seam, accepts, src, work, proof, args):
-            return proof
+        if (tuple(args.prepare_ops or ()), facts, declaration) == before:
+            if not _ask_seam(agent, seam, accepts, src, work, proof, args):
+                return proof
         if args.prepare_ops and tuple(args.prepare_ops) != before[0]:
             # A patch has to be APPLIED and the build rebuilt before it can
             # be judged: the answer is a proposal, and the build is what

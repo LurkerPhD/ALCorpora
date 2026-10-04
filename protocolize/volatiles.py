@@ -62,6 +62,42 @@ class Volatile:
         return f'  {self.cases:>4} cases: {self.shape!r}   e.g. {ex}'
 
 
+#: A shape's `#` is where `shape_of` replaced a number.  In a LINE that spot
+#: holds any numeric spelling `shape_of` recognizes — an integer, a decimal,
+#: or an exponent form — so the rule has to accept all of them.
+_SHAPE_NUMBER_RE = r'[\d.]+(?:[eEdD][-+]?\d+)?'
+
+
+def _literal_as_regex(piece: str) -> str:
+    """*piece* as regex source: its text literal, its space runs flexible.
+
+    The spaces MUST flex.  A shape collapses whitespace because a printed
+    table pads its columns to the width of the number in them, so the real
+    line's runs are wider than the shape's single space; a rule built from
+    the shape without this matches nothing on the very decks it was measured
+    on.
+    """
+    esc = re.escape(piece)
+    # `re.escape` escapes a space on old Pythons and not on new ones; take
+    # either form back to a bare space, then widen every run of them.
+    esc = esc.replace('\\ ', ' ')
+    return re.sub(r' +', r'\\s+', esc)
+
+
+def drop_pattern(shape: str) -> str:
+    """A `drop` regex matching a line of exactly this SHAPE.
+
+    A measured shape (``shape_of`` output — numbers replaced by `#`,
+    whitespace collapsed) becomes regex source by escaping its literal text
+    and putting a number-matcher where each `#` stood.  It is anchored, so it
+    matches the lines this shape names and not a longer line that merely
+    begins the same way.
+    """
+    parts = shape.split('#')
+    body = _SHAPE_NUMBER_RE.join(_literal_as_regex(p) for p in parts)
+    return f'^\\s*{body}\\s*$'
+
+
 def _golden_files(root: Path) -> dict[Path, Path]:
     """Every captured golden under *root*, keyed the way its case names it.
 
