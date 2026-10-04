@@ -28,10 +28,20 @@ from pathlib import Path
 
 #: A run's own numbers are what vary, so they are what gets masked. Floats are
 #: masked before integers so `1.5e-3` does not become `#.#e-#`.
+#:
+#: Each mask also swallows the WHITESPACE RUN before the number, and that is
+#: what makes a shape the SENTENCE rather than the sentence plus a column's
+#: padding. A printed field pads to the width of the number in it, so two runs
+#: of one program print `at 20:37:16.314` and `at 20:30: 3.493`: the padding
+#: before the `3` is not part of what the line SAYS, but masking the number
+#: alone left it in the shape (`at #:#:#` vs `at #:#: #`), so ONE volatile
+#: mechanism became TWO shapes and neither matched the line the other saw.
+#: Eating the run puts the padding on the number's side of the boundary, where
+#: it belongs, and the two collapse to one shape.
 _MASKS = (
-    (re.compile(r'\d+\.\d*[eEdD][-+]?\d+'), '#'),
-    (re.compile(r'\d+\.\d+'), '#'),
-    (re.compile(r'\d+'), '#'),
+    (re.compile(r'\s*\d+\.\d*[eEdD][-+]?\d+'), '#'),
+    (re.compile(r'\s*\d+\.\d+'), '#'),
+    (re.compile(r'\s*\d+'), '#'),
 )
 
 
@@ -43,6 +53,8 @@ def shape_of(line: str) -> str:
     `B =    21` and `B =     4` mask to `B =    #` and `B =     #` — the same
     sentence, two different shapes. Without the collapse one mechanism looks
     like several, and a rule written against one shape would miss the rest.
+    The masks eating their own leading run is the same point at the boundary
+    the collapse cannot reach (see `_MASKS`): a number's padding is not text.
     """
     out = line.rstrip('\n')
     for rx, repl in _MASKS:
@@ -66,6 +78,14 @@ class Volatile:
 #: holds any numeric spelling `shape_of` recognizes — an integer, a decimal,
 #: or an exponent form — so the rule has to accept all of them.
 _SHAPE_NUMBER_RE = r'[\d.]+(?:[eEdD][-+]?\d+)?'
+
+#: What replaces a `#` when the shape is turned back into a regex.  The number
+#: takes the whitespace AROUND it, because the shape does not carry any: the
+#: masks ate the run before it, so `END TIME:#` stands for ` END TIME: 18`
+#: where the real line's space has nowhere in the shape to live.  Without this
+#: the rule built from a measured shape matches none of the lines it was
+#: measured on.
+_SHAPE_NUMBER_SEP = r'\s*' + _SHAPE_NUMBER_RE + r'\s*'
 
 
 def _literal_as_regex(piece: str) -> str:
@@ -94,7 +114,7 @@ def drop_pattern(shape: str) -> str:
     begins the same way.
     """
     parts = shape.split('#')
-    body = _SHAPE_NUMBER_RE.join(_literal_as_regex(p) for p in parts)
+    body = _SHAPE_NUMBER_SEP.join(_literal_as_regex(p) for p in parts)
     return f'^\\s*{body}\\s*$'
 
 

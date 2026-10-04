@@ -24,8 +24,30 @@ def test_a_measured_shape_becomes_a_rule_that_matches_the_real_lines():
     # Same SHAPE, wider padding: a printed field pads to its number's width,
     # so the rule must flex the runs or it matches nothing on the next deck.
     assert re.search(pat, ' END TIME:   18:  8:19'), 'wider runs must match'
-    assert vars(volatiles) and volatiles.shape_of(' END TIME:   18:  8:19') == \
-        'END TIME: #: #:#', 'and that line really is the same shape'
+    assert volatiles.shape_of(' END TIME: 18: 8:19') == \
+        volatiles.shape_of(' END TIME:   18:  8:19'), (
+            'padding is not part of the sentence: both are one shape')
+    # And the rule built from the shape matches BOTH spellings, because the
+    # number matcher takes the whitespace around it.
+    loose = volatiles.drop_pattern(volatiles.shape_of(' END TIME: 18: 8:19'))
+    assert re.search(loose, ' END TIME:   18:  8:19')
+    assert re.search(loose, ' END TIME: 18: 8:19')
+
+
+def test_padding_at_a_boundary_is_not_a_second_shape():
+    """Two runs of one program print `at 20:37:16.314` and `at 20:30: 3.493`.
+
+    The padding before the `3` is a column's, not the sentence's — but a mask
+    that replaces only the digits leaves it in the shape, so ONE volatile line
+    looks like TWO and the rule built from either misses the other.  Measured
+    on a real corpus, where this produced forty rules that matched nothing.
+    """
+    a = ' >> MYSTRAN END    : 10/ 4/2026 at 20:37:16.314'
+    b = ' >> MYSTRAN END    : 10/ 4/2026 at 20:30: 3.493'
+    assert volatiles.shape_of(a) == volatiles.shape_of(b), (
+        'the numbers differ in width; the shape must not')
+    pat = volatiles.drop_pattern(volatiles.shape_of(a))
+    assert re.search(pat, a) and re.search(pat, b)
 
 
 def test_one_rule_covers_two_different_values_of_one_mechanism():
