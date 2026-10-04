@@ -65,22 +65,32 @@ admit a project:
 toolchain that cannot be installed, a resource the repo does not ship. Report
 that in one line. Everything else, fix and continue.
 
-The mechanical half is `scripts/fetch.py`; the loop calls it, reads what it
-says, and decides the next move. The part that is per project — the native
-build commands, and the fix when it fails — is YOURS.
+The mechanical half is `bench.py` at the repository root, which delegates to
+the flow in `admit.py` and the mechanical pieces in `scripts/fetch.py`. Call
+`bench.py`, read what it says, and decide the next move. The part that is per
+project — the native build commands, and the fix when it fails — is YOURS.
 
 ```bash
-python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X
+python3 bench.py fetch <url-or-path> --name X
 #   succeeds            -> the project is LEGAL; move on
 #   REFUSED / NOT LEGAL -> read the reason, decide the fix, retry:
-python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+python3 bench.py fetch <url-or-path> --name X \
     --build "<the project's build, with any flags you found>" \
     --prepare fix.json     # ops YOU diagnosed, each {op, check, run}
 # ... and when the cases run but report nothing, the project's own
 # declaration of what its programs need:
-python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+python3 bench.py fetch <url-or-path> --name X \
     --facts facts.json --declaration rules.json
 ```
+
+**Use `bench.py`, not a hand-written equivalent.** Every atomic operation has
+one definition there (`tree`, `wipe`, `plan`, `verify`, `evidence`, `row`,
+`fetch`, `admit`), and an improvised replacement drifts from it in some detail
+that is invisible until it bites — measured twice: a re-derived "which
+directory is the tree" answered wrongly for a checkout with no build-system
+marker at the top, and a re-derived "clear the build" deleted a make project's
+source directory. When an operation is missing, ASK for it to be added to
+`bench.py`; do not write a second one beside it.
 
 **The defaults are CMake+Ninja, and they are only defaults.** `--configure`,
 `--build`, `--test` and `--tree-subdir` all describe ONE build system, so a
@@ -90,7 +100,7 @@ the truth is that nobody told the loop how. For a hand-written make project,
 for instance:
 
 ```bash
-python3 skills/fetch-benchmark-project/scripts/fetch.py <url> --name X \
+python3 bench.py fetch <url> --name X \
     --configure "" \
     --build "make -C source/mis && make -C source/mds" \
     --test "<a script that runs the program on a deck and checks its own banner>" \

@@ -50,6 +50,10 @@
 ## 模块地图
 
 ```
+bench.py                工具入口:一个子命令一个原子操作
+                        (tree/wipe/plan/verify/evidence/row/fetch/admit);
+                        每个都委托,没有一个重写
+admit.py                准入流程(编号/取源/原生/§A/§B/记行)
 protocolize/
   tree_anchor.py        ${TREE} 占位符: expand / escape / 校验(裸 $ 拒绝)
   compile_commands.py   读 compile database;协议**内嵌**一份
@@ -57,6 +61,7 @@ protocolize/
   private_protocol.py   构建协议 schema + problems() + canonical_stem
   verification_plan.py  验证协议 schema + problems()
   flat_cmake.py         协议 + state -> 一个扁平 CMakeLists.txt
+  volatiles.py          测量同一个二进制的两次运行**在哪些行上不一致**
   onboard/
     extract.py          从已构建的树里读出协议(ninja/CMake);
                         capture_verification;own_roots;prepare;tests;support_files
@@ -66,10 +71,12 @@ protocolize/
     suite.py            运行一个验证计划;算裁决
     cli.py              CLI: python3 -m protocolize.verify.cli <build tree>
     reference.py        origin(黄金)捕获;计划的运行时环境
-    compare.py          text/field 比对(lockstep / numclose / 列模型)
+    compare.py          text/field 比对(lockstep / numclose / 列模型);
+                        drop / keep / mask
     counts.py           BenchCounts:从 runner 自己的输出解析计数
     log.py              日志 / tee / Action
 skills/onboard-project/  技能:SKILL.md + scripts/onboard.py + reference/*.json + tests/
+skills/fetch-benchmark-project/  把一个项目准入 benchmark/:SKILL.md + scripts/fetch.py
 ```
 
 **分层。** `tree_anchor.py` 是 layer 1(transpiler 也要用它);协议代码是 layer 2,
@@ -274,6 +281,17 @@ CMakeLists.txt -> cmake+ninja -> 产物 -> §A 比对
 # 包自身 + 技能的单测
 python3 -m pytest -q
 
+# 工具:一个子命令一个原子操作。用它们,别自己拼一份等价的——
+# 第二份实现会在某个细节上和第一份分叉,而那个分叉在咬人之前看不见。
+python3 bench.py tree     <benchmark dir>   # 哪个目录是源码树
+python3 bench.py wipe     <benchmark dir>   # 清**本工具**的产物(不动项目文件)
+python3 bench.py plan     <benchmark dir>   # 计划可执行吗 + 几条 drop/keep/mask
+python3 bench.py verify   <benchmark dir>   # §B 裁决
+python3 bench.py evidence <benchmark dir> --shift-date   # 两次跑在哪里不一致
+python3 bench.py row      <benchmark dir>   # 它在 benchmark.csv 的那一行
+python3 bench.py fetch    <url>  [--name … --build … ]   # 首次准入
+python3 bench.py admit    <benchmark dir> [--build … ]   # 重证一个已准入的
+
 # §A 端到端,在一个真构建上
 python3 -c "
 from pathlib import Path
@@ -282,7 +300,4 @@ proto, report = extract_and_prove('<build tree>', tree_root='<root>',
                                   work_root='<scratch>')
 print(report.ok, len(proto.compilation))
 "                     # report.ok 必须是 True
-
-# §B:让一个 plan 跑在一个 build 上
-python3 -m protocolize.verify.cli <build tree>          # 退出码就是裁决
 ```

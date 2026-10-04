@@ -59,6 +59,10 @@ stale comment does.
 ## Module map
 
 ```
+bench.py                THE TOOL ENTRY POINT: one atomic operation per
+                        subcommand (tree/wipe/plan/verify/evidence/row/
+                        fetch/admit); each delegates, none reimplements
+admit.py                the admission flow (number, fetch, native, §A, §B, row)
 protocolize/
   tree_anchor.py        ${TREE} placeholder: expand / escape / validate (bare $ refused)
   compile_commands.py   read a compile database; a protocol CONTAINS one
@@ -66,6 +70,7 @@ protocolize/
   private_protocol.py   build-protocol schema + problems() + canonical_stem
   verification_plan.py  verification-protocol schema + problems()
   flat_cmake.py         protocol + state -> one flat CMakeLists.txt
+  volatiles.py          measure what two runs of one binary DISAGREE on
   onboard/
     extract.py          read a protocol OUT of a built tree (ninja/CMake);
                         capture_verification; own_roots; prepare; tests; support_files
@@ -75,10 +80,12 @@ protocolize/
     suite.py            run a verification plan; compute the verdict
     cli.py              CLI: python3 -m protocolize.verify.cli <build tree>
     reference.py        origin (golden) capture; the plan's run-time environment
-    compare.py          text/field comparison (lockstep / numclose / column model)
+    compare.py          text/field comparison (lockstep / numclose / column model);
+                        drop / keep / mask
     counts.py           BenchCounts: parse counts from a runner's own output
     log.py              logging / tee / Action
 skills/onboard-project/  the skill: SKILL.md + scripts/onboard.py + reference/*.json + tests/
+skills/fetch-benchmark-project/  admit ONE project into benchmark/: SKILL.md + scripts/fetch.py
 ```
 
 **Layering.** `tree_anchor.py` is layer 1 (the transpiler needs it too); the
@@ -309,6 +316,18 @@ project to drop.
 # package + skill unit tests
 python3 -m pytest -q
 
+# THE TOOL: one atomic operation per subcommand. Use these rather than
+# improvising an equivalent — a second implementation drifts from the first
+# in some detail that stays invisible until it bites.
+python3 bench.py tree     <benchmark dir>   # which directory is the source tree
+python3 bench.py wipe     <benchmark dir>   # remove THIS TOOL's artifacts (not the project's)
+python3 bench.py plan     <benchmark dir>   # executable? and how many drop/keep/mask
+python3 bench.py verify   <benchmark dir>   # §B verdict
+python3 bench.py evidence <benchmark dir> --shift-date   # what two runs disagree on
+python3 bench.py row      <benchmark dir>   # its line in benchmark.csv
+python3 bench.py fetch    <url>  [--name … --build … ]   # FIRST admission
+python3 bench.py admit    <benchmark dir> [--build … ]   # re-prove one
+
 # §A end to end, on a real build
 python3 -c "
 from pathlib import Path
@@ -317,7 +336,4 @@ proto, report = extract_and_prove('<build tree>', tree_root='<root>',
                                   work_root='<scratch>')
 print(report.ok, len(proto.compilation))
 "                     # report.ok must be True
-
-# §B: run a plan against a build
-python3 -m protocolize.verify.cli <build tree>          # exit code = verdict
 ```

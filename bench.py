@@ -22,7 +22,8 @@ only gives them one name and one place to be found.
                                 run the reference TWICE and report the line
                                 shapes that moved and are NOT yet declared
     bench.py row     DIR        this project's line in benchmark.csv
-    bench.py admit   DIR [--…]  the full flow (delegates to admit.py)
+    bench.py fetch   URL [--…]  a FIRST admission: number, fetch, prove
+    bench.py admit   DIR [--…]  re-prove one already in benchmark/
 
 Exit status: 0 on success, 1 on a failed verdict, 2 on a usage error. A
 subcommand that cannot run at all says so on stderr and returns 1 — never a
@@ -233,8 +234,23 @@ def cmd_row(args: list[str]) -> int:
     return 1
 
 
+def cmd_fetch(args: list[str]) -> int:
+    """Admit a project for the FIRST time: number it, fetch it, prove it.
+
+    The counterpart of `admit` (which re-proves one already in `benchmark/`).
+    Delegates to `admit.py` without `--readmit`, so a first admission and a
+    re-prove are the same flow reached two ways — not two implementations.
+    """
+    if not args:
+        print('usage: bench.py fetch <url-or-path> [--name … --build … …]',
+              file=sys.stderr)
+        return 2
+    import admit
+    return admit.main(list(args))
+
+
 def cmd_admit(args: list[str]) -> int:
-    """The full flow for one project. Delegates to `admit.py`.
+    """Re-prove a project already in benchmark/. Delegates to `admit.py`.
 
     Arguments after DIR are passed straight through, so this is the same
     entry point the regression uses and not a second implementation of it.
@@ -250,6 +266,7 @@ def cmd_admit(args: list[str]) -> int:
 # ── dispatch ──────────────────────────────────────────────────
 
 _COMMANDS = {
+    'fetch': cmd_fetch,
     'tree': cmd_tree,
     'wipe': cmd_wipe,
     'plan': cmd_plan,
