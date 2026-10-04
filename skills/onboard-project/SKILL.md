@@ -99,6 +99,31 @@ cmake -S <project> -B <project>/build -G Ninja && ninja -C <project>/build
 # or: make -C <project>
 ```
 
+**If the build is NOT CMake/ninja, prefer a build that EXPORTS a compile
+database.** For those the tool has to fall back to `make -Bn`, which is a
+GUESS at what make would do and has a blind spot that fails silently:
+`$(shell …)` does NOT expand under `-n`, so a Makefile that generates its
+sources through a shell command shows no rule for them
+(`protocolize/onboard/make_extract.py` documents this). An exported
+`compile_commands.json` is a static record of what actually ran and has no
+such hole — so if the build system can produce one, ask for it:
+
+```bash
+# CMake with a Makefiles generator:
+cmake -S <project> -B <project>/build -G "Unix Makefiles" \
+      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build <project>/build
+# anything else driven by make:  bear -- make -C <project>   (or `compiledb`)
+```
+
+Two honest limits. It is a gain ONLY where the fallback was `make -Bn`: for a
+`build.ninja` tree the tool already asks `ninja -t compdb`, which reads the
+CURRENT build graph, and the database is the same data by another route — no
+gain, so do not add it there. And a `compile_commands.json` the tool finds is
+read PREFERENTIALLY, so it must come from THIS build: a stale one, left by a
+different configure or a different flag set, would be taken as the authority
+over the build graph that is actually here. Export it as part of the build
+you are making, never inherit one.
+
 ### 2. Extract the protocol, and let it PROVE itself
 
 ```bash

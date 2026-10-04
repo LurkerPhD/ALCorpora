@@ -103,88 +103,139 @@ must produce — and what it must never do.
 
 ```python
 ADMIT_ONE_PROJECT(source):
-    # ── [AGENT] the only step EVERY project needs generalisation for ──────
-    # "how does this project build and verify itself" has no deterministic
-    # answer. This is the one research result the agent must produce.
-    configure, build, test, tree_subdir = research_how_it_builds(source)
+    # [AGENT] A1 — the ONE step every project pays for generalisation on
+    A1  configure, build, test, tree_subdir = research_how_it_builds(source)
 
-    # ── [PY] everything below runs inside one call ────────────────────────
-    [AGENT] -> python3 bench.py {fetch <source> | admit <dir>} <args...>
-    #   fetch = a FIRST admission;  admit = re-prove one already in benchmark/
+    # [PY] one call; the whole pipeline below is deterministic
+    P1  call:  python3 bench.py {fetch <source> | admit <dir>} <args...>
+    P2  n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
+    P3  fetch(source -> dest/inner)              # clone/copy, with retries
+    P4  src = inner_source(dest)                 # by what it HOLDS, not its name
+        clear_previous_build(src, tree_subdir)   # re-prove only; in-source keeps the dir
 
-    n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
-    fetch(source -> dest/inner)                 # clone or copy, with retries
-    src = inner_source(dest)                    # chosen by what it HOLDS, not its name
-    if re-prove: clear_previous_build(src, tree_subdir)
-        # in-source -> only the state the build system generated, never the dir
+    # P5-P6 native: the project's own toolchain, its own verification
+    P5  apply prepare_ops                        # idempotent {op, check, run}
+    P6  run (configure, build, test)             # the project's OWN lines
+        on failure -> A6
 
-    # ── 1-2  NATIVE: the project builds and verifies with its OWN toolchain ─
-    for op in prepare_ops:                      # idempotent: {op, check, run}
-        if not prepare_done(op): run(op.run)
-    for line in (configure, build, test):       # the project's OWN lines
-        if it fails: record(REFUSED); -> [AGENT] JUDGE_BUILD_FAILURE
+    # P7-P8 §A: the build protocol, PROVEN by replaying it
+    P7  proto = extract_protocol(build)          # ask the build system's sub-tools
+        on refusal -> A7
+    P8  self_check(proto)                        # mirror; delete generated parts AND
+                                                 # products; flat_cmake; compare symbols
+        on refusal -> A7
 
-    # ── 3  §A: the build protocol, PROVEN by replaying it ──────────────────
-    proto = extract_protocol(build)             # ask the build system's sub-tools
-        # build.ninja -> ninja backend;  a Makefile -> make backend
-        # neither     -> REFUSE, naming what the tree IS (a backend is missing)
-        # -> units, products, generated inputs, own roots, path spellings
-    self_check(proto)                           # mirror the tree; delete generated
-        # sources AND products; flat_cmake -> cmake+ninja; compare each product by
-        # DEFINED SYMBOLS (two correct builds are never byte-identical)
-    if it does not replay: record(A=no); -> [AGENT] JUDGE_EXTRACTION_FAILURE
+    # P9 the verification protocol, read from the project's OWN declaration
+    P9  plan = capture_verification(proto, declaration, facts)
+        on problems -> A9
 
-    # ── 4  the verification protocol, read out of the project's OWN statement ─
-    plan = capture_verification(proto, declaration, facts)
-        # locate the acceptance: registered tests | a case list | one dir per case
-        # read the comparison rules (drop/keep/mask/rtol/atol); expand the facts
-    if plan.problems(): record(FAIL_B_PLAN); -> [AGENT] JUDGE_PLAN
-        # an empty or unreadable plan is NOT a neutral answer
+    # P10 the golden is MADE, never borrowed
+    P10 goldens = ensure_reference(plan)         # reference_run only
+        if 0 -> A10
 
-    # ── 5  reference run: the golden is MADE, never borrowed ────────────────
-    if plan.golden is reference_run:
-        if ensure_reference(plan) == 0: record(FAIL_B_REF); -> [AGENT] JUDGE_NO_GOLDENS
+    # P11-P12 §B twice: the project's build AND the replay must AGREE
+    P11 verify(project)                          # on failure -> A11
+    P12 verify(replay)                           # on failure -> A12
 
-    # ── 6  §B twice — the project's build AND the replay must AGREE ─────────
-    if verify(project) != green: record(FAIL_B_REF);  -> [AGENT] JUDGE_B_PROJECT
-    if verify(replay)  != green: record(FAIL_B_FLAT); -> [AGENT] JUDGE_B_FLAT
-
-    record(PASS, language, notes)               # only here is it legal
+    P13 record(PASS, language, notes)            # only here is it legal
 
 
-# ══ the agent is entered ONLY here, and each time to produce DATA ═══════════
+# ══ [AGENT] entered ONLY where the tool STOPS; each produces DATA ═══════════
 
-[AGENT] JUDGE_BUILD_FAILURE(log):
-    read(log); diagnose the cause; the fix is one of:
-        prepare_op {op, check, run}   # writes in the project tree = a PATCH; idempotent
-        build_flag                    # caller-level adaptation; not a patch
-    retry                               # a fix that did not make it build is NOT recorded
-    if nothing can be confirmed: BLOCKED
+A6  JUDGE_BUILD_FAILURE(log):
+        read(log); diagnose; the fix is one of:
+            prepare_op {op, check, run}   # writes in the tree = a PATCH; idempotent
+            build_flag                    # caller-level; not a patch
+        retry P5                           # a fix that did not build is NOT recorded
+        if none can be confirmed -> BLOCKED
 
-[AGENT] JUDGE_EXTRACTION_FAILURE(exc):
-    "the protocol is wrong"            -> fix the arguments
-    "the tool cannot read this build"  -> extend the RULE in extract.py + a test
-                                          # NEVER hand-write a protocol to get past it
+A7  JUDGE_EXTRACTION_FAILURE(exc):
+        "the protocol is wrong"           -> fix the arguments
+        "the tool cannot read this build" -> extend the RULE in extract.py + a test
+                                             # NEVER hand-write a protocol to get past it
 
-[AGENT] JUDGE_PLAN(problems):
-    declaration wrong or missing       -> write the project's own declaration
-    the capture cannot read a shape    -> extend capture_verification + a test
-                                          # NEVER hand-write a plan to get past it
+A9  JUDGE_PLAN(problems):
+        declaration wrong or missing      -> write the project's own declaration
+        the capture cannot read a shape   -> extend capture_verification + a test
+                                             # NEVER hand-write a plan to get past it
 
-[AGENT] JUDGE_NO_GOLDENS():
-    write facts.json                    # what the programs need in order to RUN
+A10 JUDGE_NO_GOLDENS():
+        write facts.json                   # what the programs need in order to RUN
 
-[AGENT] JUDGE_B_PROJECT(printed):
-    python3 bench.py evidence --shift-date    # [PY] two reference runs, second shifted
-    for each line shape it reports as UNCOVERED:
-        recognize the category -> write a rule into the project's declaration
-        # drop | keep | mask; prefer mask; never drop a line carrying a judged value
-    re-capture; re-measure (must be empty); re-verify on a FRESH capture
-        # NEVER call a difference "reasonable" and move on
+A11 JUDGE_B_PROJECT(printed):
+        P11a python3 bench.py evidence --shift-date     # [PY] two runs, second shifted
+        P11b for each shape reported UNCOVERED: recognize it -> write a rule into the
+             project's declaration  # drop | keep | mask; prefer mask; never drop a
+                                    # line carrying a judged value
+        P11c re-capture; re-measure (must be empty); re-verify on a FRESH capture
+             # NEVER call a difference "reasonable" and move on
 
-[AGENT] JUDGE_B_FLAT(printed):
-    green on the project but not on the replay -> the TOOL is wrong, not the project
+A12 JUDGE_B_FLAT(printed):
+        green on the project but not on the replay -> the TOOL is wrong, not the project
 ```
+
+### What each step does
+
+**`[PY]` — the pipeline (deterministic; the agent is not consulted).**
+
+* **P1** `bench.py {fetch|admit}` — the single entry point. `fetch` is a first
+  admission (number, fetch, prove); `admit` re-proves one already in
+  `benchmark/`. One command so there is one definition of the flow.
+* **P2** number and destination — the smallest free number is the admission
+  order, and the folder is `benchmark/<NNN>-<name>`.
+* **P3** fetch the source — a shallow clone (retried, links are flaky) or a
+  local copy. A failed copy's EMPTY destination is removed, or it would
+  consume a number without being a project.
+* **P4** find the tree, clear a previous build — the tree is whichever
+  directory HOLDS a build system (never a name). An out-of-source build
+  directory is removed whole; a build living among the sources has only the
+  state the build system generated removed, never the sources.
+* **P5** apply the prepare ops — the patches the agent diagnosed, each
+  `{op, check, run}` and idempotent: `check` decides whether it is already
+  applied, so a repeat costs nothing.
+* **P6** the project's own build and verify — the per-project commands (A1).
+  A failure STOPS here and the printed log goes to A6.
+* **P7** extract the protocol — ASK the build system's own sub-tools
+  (`ninja -t compdb`, `make -Bn`); never parse the manifest. Which backend is
+  chosen by what the tree holds.
+* **P8** PROVE it — mirror the tree, delete the generated sources AND the
+  products (so the replay must MAKE them), generate a build from the protocol
+  ALONE, compile, and compare each product by its DEFINED SYMBOLS. This is
+  what makes the protocol a product rather than a description.
+* **P9** read the verification protocol — from the project's OWN statement:
+  which acceptance (registered tests | a case list | one directory per case),
+  the comparison rules (`drop`/`keep`/`mask`/`rtol`/`atol`), and the facts its
+  programs need. Refused if the plan would not be executable.
+* **P10** make the golden — run the REFERENCE instance through the plan and
+  keep what it produced. Made, never borrowed: a shipped reference output came
+  from another machine and decade.
+* **P11** §B on the project's own build.
+* **P12** §B on the REPLAY — the two verdicts must agree. They are the same
+  plan run against two builds, so a disagreement is the protocol's fault.
+* **P13** record the row. Only here is the project legal.
+
+**`[AGENT]` — entered only where the tool STOPS, and each produces DATA.**
+
+* **A6** a native build/verify failure — read the log, diagnose, and produce
+  one of: a `prepare` op (writes in the project tree, so it IS a patch, and it
+  must be idempotent with a check) or a build flag (caller-level, not a
+  patch). Retry. **A fix that did not make the build work is never recorded.**
+* **A7** §A refused — either the protocol/arguments are wrong, or the tool
+  cannot read this build. The second is a TOOL gap: extend the rule, with a
+  test. Hand-writing a protocol to get past it is forbidden.
+* **A9** the plan is not executable — either the project's declaration is
+  wrong or missing, or the capture cannot read a shape it declares. The second
+  is a TOOL gap: extend `capture_verification`, with a test.
+* **A10** the reference run captured nothing — the programs need something in
+  order to RUN that the tree cannot show (a home directory, a resource
+  directory, a program config). Declare it in `facts.json`.
+* **A11** a golden comparison differs — MEASURE it (`bench.py evidence
+  --shift-date`, two reference runs), recognize each moving line shape, and
+  write a rule for it into the PROJECT's declaration (`drop`/`keep`/`mask`,
+  preferring `mask`). Then re-capture, re-measure (must be empty), and re-verify
+  on a FRESH capture. Never call a difference "reasonable" and move on.
+* **A12** green on the project but not on the replay — the protocol and the
+  build disagree, which is the TOOL's fault, not the project's.
 
 The single `[AGENT]` step every project pays for is `research_how_it_builds`:
 a project's native toolchain is knowledge about THAT project, and encoding a

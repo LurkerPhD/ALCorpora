@@ -4,9 +4,9 @@
 
 把**任意项目**归一化成两个产物,每个都在**出口自验证**:
 
-| 产物 | 回答的问题 | schema |
-|---|---|---|
-| **构建协议** | 这个项目是怎么**构建**的? | `private_protocol.Protocol` |
+| 产物               | 回答的问题                                | schema                                 |
+| ------------------ | ----------------------------------------- | -------------------------------------- |
+| **构建协议** | 这个项目是怎么**构建**的?           | `private_protocol.Protocol`          |
 | **验证协议** | 我们凭什么说它的一次运行是**对的**? | `verification_plan.VerificationPlan` |
 
 没被**重建过**(构建协议)/ **跑过**(验证协议)的协议不是产物。Fortran 只是第一个
@@ -33,7 +33,7 @@
    * 在 `${TREE}` 之下——重放**必须自己 make** 的(生成源、产物)。它随协议走。
    * **绝对路径**——重放**只读**的(项目源、第三方库、配置期生成的 header)。
      它不随协议走,且**不许改写**。
-   `$` 是保留字符:字面美元写 `$$`,裸 `$` 直接拒绝。
+     `$` 是保留字符:字面美元写 `$$`,裸 `$` 直接拒绝。
 3. **stem 就是 unit 的身份**:去掉一个尾扩展名,大小写保留。产物用 stem 记它的成员,
    所以链接行按 unit 的身份引用它,而不是按恰好持有它的那个文件。本仓库**不做转换**
    ——它读入一个构建再**重放**它,所以 unit 的语言就是它的语言,从来不是一个可翻转的 form。
@@ -92,88 +92,122 @@ import 它——所以 layer 1 永远不会反过来去够 layer 2。
 
 ```python
 ADMIT_ONE_PROJECT(source):
-    # ── [AGENT] 唯一一个"每个项目都必然要泛化"的步骤 ─────────────────────
-    # 「这个项目怎么原生构建、怎么原生验证」没有确定答案。这是 agent 必须
-    # 产出的唯一研究结果。
-    configure, build, test, tree_subdir = research_how_it_builds(source)
+    # [AGENT] A1 —— 唯一一个"每个项目都必然要泛化"的步骤
+    A1  configure, build, test, tree_subdir = research_how_it_builds(source)
 
-    # ── [PY] 以下全部在一次调用里跑完 ────────────────────────────────────
-    [AGENT] -> python3 bench.py {fetch <source> | admit <dir>} <args...>
-    #   fetch = 首次准入;  admit = 重证一个已在 benchmark/ 里的
+    # [PY] 一次调用;以下整条管线都是确定性的
+    P1  调用:  python3 bench.py {fetch <source> | admit <dir>} <args...>
+    P2  n, dest = 最小空缺编号, benchmark/{n:03d}-{name}
+    P3  fetch(source -> dest/inner)              # clone/copy,带重试
+    P4  src = inner_source(dest)                 # 按"它持有什么"选,不按名字
+        clear_previous_build(src, tree_subdir)   # 仅重证时;in-source 不删目录
 
-    n, dest = smallest_free_number(), benchmark/{n:03d}-{name}
-    fetch(source -> dest/inner)                 # clone 或 copy,带重试
-    src = inner_source(dest)                    # 按"它持有什么"选,不按名字
-    if re-prove: clear_previous_build(src, tree_subdir)
-        # in-source -> 只删构建系统生成的状态,绝不删目录本身
+    # P5-P6 原生:项目自己的工具链、自己的验证
+    P5  应用 prepare_ops                         # 幂等 {op, check, run}
+    P6  跑 (configure, build, test)              # 项目自己的命令
+        失败 -> A6
 
-    # ── 1-2  原生:项目用自己的工具链构建、用自己的方式验证 ───────────────
-    for op in prepare_ops:                      # 幂等:{op, check, run}
-        if not prepare_done(op): run(op.run)
-    for line in (configure, build, test):       # 项目自己的命令
-        if 失败: record(REFUSED); -> [AGENT] JUDGE_BUILD_FAILURE
+    # P7-P8 §A:构建协议,靠"重放它"来证明
+    P7  proto = extract_protocol(build)          # 问构建系统自己的子工具
+        拒绝 -> A7
+    P8  self_check(proto)                        # 镜像;删生成物**和产物**;
+                                                 # flat_cmake;按符号比对
+        拒绝 -> A7
 
-    # ── 3  §A:构建协议,靠"重放它"来证明 ────────────────────────────────
-    proto = extract_protocol(build)             # 问构建系统自己的子工具
-        # build.ninja -> ninja 后端;  有 Makefile -> make 后端
-        # 都没有      -> REFUSE,并说清这棵树"是什么"(即缺一个后端)
-        # -> 单元、产物、生成物、own_roots、路径的两种拼写
-    self_check(proto)                           # 镜像树;删掉生成源**和产物**;
-        # flat_cmake -> cmake+ninja;逐产物按**已定义符号**比对
-        # (两次正确的构建永远不会逐字节相同)
-    if 不能重放: record(A=no); -> [AGENT] JUDGE_EXTRACTION_FAILURE
+    # P9 验证协议:从项目自己的声明里读出来
+    P9  plan = capture_verification(proto, declaration, facts)
+        有问题 -> A9
 
-    # ── 4  验证协议:从项目自己的声明里读出来 ────────────────────────────
-    plan = capture_verification(proto, declaration, facts)
-        # 定位验收方式:注册的测试 | 用例清单 | 每用例一个目录
-        # 读声明的比较规则(drop/keep/mask/rtol/atol);展开 facts
-    if plan.problems(): record(FAIL_B_PLAN); -> [AGENT] JUDGE_PLAN
-        # 空计划、读不懂的计划都**不是**中性答案
+    # P10 golden 是"做出来"的,绝不"借来"
+    P10 goldens = ensure_reference(plan)         # 仅 reference_run
+        若为 0 -> A10
 
-    # ── 5  参考跑:golden 是"做出来"的,绝不"借来" ───────────────────────
-    if plan.golden is reference_run:
-        if ensure_reference(plan) == 0: record(FAIL_B_REF); -> [AGENT] JUDGE_NO_GOLDENS
+    # P11-P12 §B 跑两次:项目构建上 与 重放上 的裁决必须**一致**
+    P11 verify(project)                          # 失败 -> A11
+    P12 verify(replay)                           # 失败 -> A12
 
-    # ── 6  §B 跑两次 —— 项目构建上 与 重放上 的裁决必须**一致** ──────────
-    if verify(project) != green: record(FAIL_B_REF);  -> [AGENT] JUDGE_B_PROJECT
-    if verify(replay)  != green: record(FAIL_B_FLAT); -> [AGENT] JUDGE_B_FLAT
-
-    record(PASS, language, notes)               # 只有走到这里才算 legal
+    P13 record(PASS, language, notes)            # 只有走到这里才算 legal
 
 
-# ══ agent 只在这些出口被调用,且每次都只产出"数据" ══════════════════════════
+# ══ [AGENT] 只在**工具停下来**的地方被调用;每次都只产出"数据" ══════════════
 
-[AGENT] JUDGE_BUILD_FAILURE(log):
-    读 log;诊断成因;修法二选一:
-        prepare_op {op, check, run}   # 写进项目树 = 补丁;必须幂等
-        build_flag                    # 调用层适配,不算补丁
-    重跑                             # 没让构建通过的"修复"**不记录**
-    若定不出可确认的修法: BLOCKED
+A6  JUDGE_BUILD_FAILURE(log):
+        读 log;诊断;修法二选一:
+            prepare_op {op, check, run}   # 写进项目树 = 补丁;必须幂等
+            build_flag                    # 调用层适配,不算补丁
+        重跑 P5                           # 没让构建通过的修复**不记录**
+        若定不出可确认的修法 -> BLOCKED
 
-[AGENT] JUDGE_EXTRACTION_FAILURE(exc):
-    "协议错了"                -> 改传给工具的参数
-    "工具读不了这种构建"      -> 扩 extract.py 里那条规则 + 一个测试
-                                 # **绝不**手写一份协议绕过
+A7  JUDGE_EXTRACTION_FAILURE(exc):
+        "协议错了"                -> 改传给工具的参数
+        "工具读不了这种构建"      -> 扩 extract.py 里那条规则 + 一个测试
+                                     # **绝不**手写一份协议绕过
 
-[AGENT] JUDGE_PLAN(problems):
-    声明错/缺                 -> 写项目自己的声明
-    捕获器读不了这种声明形状  -> 扩 capture_verification + 一个测试
-                                 # **绝不**手写一份计划绕过
+A9  JUDGE_PLAN(problems):
+        声明错/缺                 -> 写项目自己的声明
+        捕获器读不了这种声明形状  -> 扩 capture_verification + 一个测试
+                                     # **绝不**手写一份计划绕过
 
-[AGENT] JUDGE_NO_GOLDENS():
-    写 facts.json             # 程序"能跑起来"所需、但树里看不出的事实
+A10 JUDGE_NO_GOLDENS():
+        写 facts.json             # 程序"能跑起来"所需、但树里看不出的事实
 
-[AGENT] JUDGE_B_PROJECT(printed):
-    python3 bench.py evidence --shift-date    # [PY] 跑两次参考,第二次改 TZ
-    对每条被报为"未覆盖"的行形状:
-        识别类别 -> 把一条规则写进项目自己的声明
-        # drop | keep | mask;默认 mask;同行有被判量时**绝不 drop 整行**
-    重新捕获;重新测量(必须为空);在**重新捕获**的 golden 上重验
-        # **绝不**把一条差异"归为合理"就放过
+A11 JUDGE_B_PROJECT(printed):
+        P11a python3 bench.py evidence --shift-date   # [PY] 跑两次参考,第二次改 TZ
+        P11b 对每条被报为"未覆盖"的行形状:识别类别 -> 把规则写进项目自己的声明
+             # drop | keep | mask;默认 mask;同行有被判量时**绝不 drop 整行**
+        P11c 重新捕获;重新测量(必须为空);在**重新捕获**的 golden 上重验
+             # **绝不**把一条差异"归为合理"就放过
 
-[AGENT] JUDGE_B_FLAT(printed):
-    项目上绿、重放上不绿 -> 是**工具**错了,不是项目
+A12 JUDGE_B_FLAT(printed):
+        项目上绿、重放上不绿 -> 是**工具**错了,不是项目
 ```
+
+### 每一步在做什么
+
+**`[PY]` —— 管线(确定性;不询问 agent)。**
+
+* **P1** `bench.py {fetch|admit}` —— 单一入口。`fetch` 是首次准入(编号、取源、
+  证明);`admit` 是重证一个已在 `benchmark/` 里的。合成一个命令,流程就只有一份定义。
+* **P2** 编号与目标目录 —— 最小空缺编号就是准入顺序,目录是 `benchmark/<NNN>-<name>`。
+* **P3** 取源 —— 浅 clone(带重试,链路不稳)或本地拷贝。失败的拷贝会留下**空目录**,
+  必须删掉,否则它白白占掉一个编号却不是项目。
+* **P4** 找到树、清上次构建 —— 树是**持有一个构建系统**的那个目录(绝不按名字)。
+  out-of-source 的构建目录整个删;in-source 的只删构建系统生成的状态,**绝不删源码**。
+* **P5** 应用 prepare ops —— agent 诊断出来的补丁,每条 `{op, check, run}` 且幂等:
+  `check` 决定是否已经打过,重复执行不花钱。
+* **P6** 项目自己的构建与验证 —— 即逐项目的命令(A1)。失败就**停在这里**,
+  把打印出来的日志交给 A6。
+* **P7** 抽取协议 —— **问构建系统自己的子工具**(`ninja -t compdb`、`make -Bn`),
+  **绝不解析清单文件**。选哪个后端由树里持有什么决定。
+* **P8** 证明它 —— 镜像树、删掉生成源**和产物**(逼重放去"做"出来)、**只从协议**
+  生成一份构建、编译、逐产物按**已定义符号**比对。这一步才让协议成为**产物**,
+  而不是一份描述。
+* **P9** 读出验证协议 —— 从项目**自己的声明**:验收方式(注册测试 | 用例清单 |
+  每用例一目录)、比较规则(`drop`/`keep`/`mask`/`rtol`/`atol`)、程序运行所需的事实。
+  计划若不可执行就拒绝。
+* **P10** 做出 golden —— 让 **reference 实例**跑同一个计划,留住它的输出。
+  是"做出来"的,不是"借来"的:仓库自带的参考输出来自另一台机器、另一个年代。
+* **P11** §B 跑在项目自己的构建上。
+* **P12** §B 跑在**重放**上 —— 两个裁决必须一致。同一个计划跑在两个构建上,
+  不一致就是**协议**的错。
+* **P13** 记行。只有走到这里,项目才算 legal。
+
+**`[AGENT]` —— 只在工具停下来处进入,且每次都只产出"数据"。**
+
+* **A6** 原生构建/验证失败 —— 读日志、诊断,产出其一:`prepare` op(写进项目树,
+  所以**它就是补丁**,且必须幂等、带 check)或 build flag(调用层适配,不算补丁)。
+  重跑。**没让构建通过的"修复"绝不记录。**
+* **A7** §A 拒绝 —— 要么协议/参数错了,要么工具读不了这种构建。后者是**工具缺口**:
+  扩那条规则 + 一个测试。**手写一份协议绕过是被禁止的。**
+* **A9** 计划不可执行 —— 要么项目的声明错/缺,要么捕获器读不了它声明的形状。
+  后者是**工具缺口**:扩 `capture_verification` + 一个测试。
+* **A10** 参考跑什么都没采到 —— 程序**能跑起来**需要树里看不出的事实(home 目录、
+  资源目录、程序配置)。写进 `facts.json`。
+* **A11** golden 对比出现差异 —— **测量**它(`bench.py evidence --shift-date`,
+  跑两次参考),识别每条在动的行形状,把规则写进**项目自己的**声明
+  (`drop`/`keep`/`mask`,优先 `mask`)。然后重新捕获、重新测量(必须为空)、
+  在**重新捕获**的 golden 上重验。**绝不把一条差异"归为合理"就放过。**
+* **A12** 项目上绿、重放上不绿 —— 协议与构建不一致,是**工具**的错,不是项目。
 
 **每个项目都要付的那一步,只有 `research_how_it_builds`**:一个项目的原生工具链是
 **关于那个项目**的知识,把猜测编码进工具就是把项目知识推进了工具。agent 其余所有动作
@@ -237,13 +271,13 @@ _prove -> selfcheck.self_check():
 3. **`.data` 原始字节**(`objcopy -j .data`)——逮住只看代码时看不见的 `DATA` 常量;
 4. **section 清单**(`readelf -S` 的名称+类型;**不含大小**)。
 
-| 构造 | 整文件 | 规范化 .text | .data | 结论 |
-|---|---|---|---|---|
-| 同代码,路径**长度不同** | 差 | **同** | 同 | EQUAL |
-| `-O0` vs `-O2` | 差 | **差** | — | DIFFER |
-| `__DATE__`/`__TIME__` 差一秒 | 差 | **同** | 同 | EQUAL |
-| `data x /1/` vs `/2/` | 差 | 同(盲) | **差** | DIFFER |
-| section 基址平移 | 同 | 同 | 同 | EQUAL |
+| 构造                             | 整文件 | 规范化 .text | .data        | 结论   |
+| -------------------------------- | ------ | ------------ | ------------ | ------ |
+| 同代码,路径**长度不同**    | 差     | **同** | 同           | EQUAL  |
+| `-O0` vs `-O2`               | 差     | **差** | —           | DIFFER |
+| `__DATE__`/`__TIME__` 差一秒 | 差     | **同** | 同           | EQUAL  |
+| `data x /1/` vs `/2/`        | 差     | 同(盲)       | **差** | DIFFER |
+| section 基址平移                 | 同     | 同           | 同           | EQUAL  |
 
 **不许用**:整文件 sha256(`__DATE__` 反例)、`.rodata` 内容(内嵌的源码路径就落在
 那里)、裸 `.text` 字节(路径长度变化会移动 rip 位移)、收 `.o` 文件。
@@ -327,7 +361,6 @@ CMakeLists.txt -> cmake+ninja -> 产物 -> §A 比对
 
 生成器仍决定两件记录命令不包含的事:展开 `${TREE}` 到重放树;让一个单元 DEPENDS
 在它所用模块的对象上,于是编译顺序交给 CMake。
-
 
 ## benchmark(被驱动的语料)
 

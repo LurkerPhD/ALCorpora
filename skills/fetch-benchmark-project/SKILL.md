@@ -96,6 +96,23 @@ it how. `--configure ""` is the right answer when there is nothing to
 configure: "nothing to do" is true about such a project, while running CMake
 at it is not.
 
+**If it is NOT CMake/ninja, put a compile database in the `--configure`/
+`--build` you pass.** For such a project §A falls back to `make -Bn`, which
+GUESSES what make would do and has a silent blind spot: `$(shell …)` does not
+expand under `-n`, so sources a Makefile generates through a shell command
+appear as no rule at all. An exported `compile_commands.json` is a static
+record of what actually ran. So ask the build for one — e.g.
+`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` for a Makefiles-generator CMake build, or
+`bear -- make …` / `compiledb` for a plain make one. This is part of the
+per-project commands you are already choosing; it is not a new tool.
+
+Two limits, both real. It is a gain ONLY where the fallback is `make -Bn` — a
+`build.ninja` tree already answers through `ninja -t compdb`, which reads the
+current build graph, so for those there is nothing to add. And the tool reads
+a database it finds PREFERENTIALLY, so it must be exported by THIS build: a
+stale one from a different configure or a different flag set would outrank the
+build graph that is actually here.
+
 **Commands that reference the source.** `{src}` in any of these is replaced
 with the project's source directory, so a path can be written relative to it
 rather than absolute. When a project needs a real verification driver that its
