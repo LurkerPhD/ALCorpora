@@ -220,13 +220,30 @@ def declared_modes(plan) -> tuple:
     return drop, keep, mask
 
 
-def is_covered(a_line: str, b_line: str, modes: tuple) -> bool:
+def is_covered(a_line: str, b_line: str, modes: tuple, *,
+               rtol: float | None = None,
+               atol: float | None = None) -> bool:
     """Whether the plan's declared rules already make these two lines equal.
 
     Asked by RUNNING the rules over the pair rather than by matching patterns
     by eye: a `mask` that only moves part of a line, or a `drop` that happens
     to match, are both answers the rule itself gives, and re-deriving them
     here would be a second implementation that can disagree with the first.
+
+    *rtol*/*atol* are the plan's declared numeric slack, and they must be
+    passed whenever the plan compares with `numclose` — otherwise this
+    answers "not covered" for a pair the VERDICT calls equal, which is how
+    `evidence` reported 27 uncovered shapes on a corpus whose comparison had
+    0 differences.
+
+    WHAT THIS STILL CANNOT SEE: a difference in line COUNT, or a reordering.
+    Two runs of one program may print the same lines a different number of
+    times or in a different order; `lockstep` compares the normalized
+    sequences and absorbs that, while this pairs line *i* with line *i*. A
+    line-count shift therefore shows here as uncovered even though the
+    verdict is green. That is the honest limit of a per-line question, and it
+    is why "evidence empty" is not by itself the completion test — the
+    verdict is.
     """
     from protocolize.verify import compare
     drop, keep, mask = modes
@@ -234,35 +251,88 @@ def is_covered(a_line: str, b_line: str, modes: tuple) -> bool:
         return False
     na = compare.normalize(a_line, drop, keep, mask)
     nb = compare.normalize(b_line, drop, keep, mask)
-    return na == nb
+    if na == nb:
+        return True
+    # `normalize` returns the surviving LINES; a single line in gives 0 or 1
+    # back. Only a one-line-each pair can be judged numerically.
+    if rtol is not None and atol is not None and len(na) == 1 and len(nb) == 1:
+        return not compare.numclose(na[0], nb[0], rtol=rtol, atol=atol)
+    return False
+
+
+def declared_slack(plan) -> tuple:
+    """The `rtol`/`atol` the plan compares with, from its lockstep assertions.
+
+    Read here for the same reason `declared_modes` is: coverage has to be
+    asked with the SAME comparison the verdict uses. A pair inside the
+    declared tolerance is not "uncovered" — it is a pair the verdict calls
+    equal, and reporting it would send the reader to write a rule for a
+    difference that does not exist.
+    """
+    for a in (getattr(plan, 'assertions', None) or []):
+        if hasattr(a, 'get') and a.get('kind') in ('text_lockstep',
+                                                   'field_assertion'):
+            from protocolize.verify import compare
+            return (float(a.get('rtol', compare.DEFAULT_RTOL)),
+                    float(a.get('atol', compare.DEFAULT_ATOL)))
+    return None
 
 
 def uncovered(root_a: Path, root_b: Path, modes: tuple,
-              *, limit: int = 40) -> list:
+              *, slack: tuple | None = None, limit: int = 40) -> list:
     """Line shapes that differ between two runs AND are not yet declared.
 
-    The same measurement as `between`, with the plan's own rules applied
-    first: what survives is what an agent still has to write a rule for.
+    The SAME comparison the verdict makes: apply the plan's `drop`/`keep`/`mask`
+    to each file FIRST, then compare the surviving sequences position by
+    position, with the plan's numeric slack. Whatever a rule does not account
+    for is what comes back.
+
+    Normalizing first is what makes this agree with `lockstep`, and it is not
+    a detail. Asked per RAW line — "is this raw pair covered?" — this reported
+    27 uncovered shapes on a corpus whose comparison had ZERO differences,
+    because a rule that DROPS a varying line changes the line COUNT, and a
+    per-position question then mispairs everything after it. Normalizing
+    first removes that whole class: the dropped line is gone from both sides,
+    the counts agree, and the shift never appears.
     """
+    from protocolize.verify import compare
+    drop, keep, mask = modes
+    rtol, atol = slack if slack else (compare.DEFAULT_RTOL, compare.DEFAULT_ATOL)
     a, b = _golden_files(Path(root_a)), _golden_files(Path(root_b))
     by_shape: dict[str, set] = {}
     examples: dict[str, list] = {}
+
+    def note(sh: str, rel: str, example: str) -> None:
+        by_shape.setdefault(sh, set()).add(rel)
+        ex = examples.setdefault(sh, [])
+        if len(ex) < 2:
+            ex.append(example)
+
     for rel in sorted(set(a) & set(b)):
         try:
-            la = a[rel].read_text(errors='replace').splitlines()
-            lb = b[rel].read_text(errors='replace').splitlines()
+            ta = a[rel].read_text(errors='replace')
+            tb = b[rel].read_text(errors='replace')
         except OSError:
             continue
-        for x, y in zip(la, lb):
-            if x == y or is_covered(x, y, modes):
+        na = compare.normalize(ta, drop, keep, mask)
+        nb = compare.normalize(tb, drop, keep, mask)
+        if len(na) != len(nb):
+            # A difference the declared rules did NOT account for, since a
+            # line both sides drop cannot change the count. One shape, not
+            # one per mispaired line after it.
+            note(f'<line count differs after the rules: {len(na)} vs {len(nb)}>',
+                 str(rel), f'{len(na)} lines vs {len(nb)} lines')
+            continue
+        for x, y in zip(na, nb):
+            if x == y:
+                continue
+            if compare.numclose(x, y, rtol=rtol, atol=atol):
                 continue
             sh = shape_of(x)
             if shape_of(y) != sh:
                 sh = f'{shape_of(x)}  !=  {shape_of(y)}'
-            by_shape.setdefault(sh, set()).add(str(rel))
-            ex = examples.setdefault(sh, [])
-            if len(ex) < 2:
-                ex.append(f'{x.strip()[:70]!r} vs {y.strip()[:70]!r}')
+            note(sh, str(rel), f'{x.strip()[:70]!r} vs {y.strip()[:70]!r}')
+
     ranked = sorted(by_shape.items(), key=lambda kv: (-len(kv[1]), kv[0]))
     return [Volatile(shape=sh, cases=len(c), examples=tuple(examples[sh]))
             for sh, c in ranked[:limit]]
@@ -355,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         root_a, root_b = capture_twice(plan, env, work,
                                        shift_date=args.shift_date)
         modes = declared_modes(plan)
-        left = uncovered(root_a, root_b, modes)
+        left = uncovered(root_a, root_b, modes, slack=declared_slack(plan))
     finally:
         if not args.keep:
             import shutil

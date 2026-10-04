@@ -208,3 +208,66 @@ def test_a_mask_that_ignores_the_judged_part_does_not_hide_a_real_diff(tmp_path)
     left = uncovered(a, b, declared_modes(_Plan))
     assert left, ('the RESULT moved and the mask does not touch it, so this '
                   'is NOT covered')
+
+
+def test_uncovered_agrees_with_the_verdict(tmp_path: Path):
+    """`evidence` and `lockstep` must use ONE notion of "covered".
+
+    Measured: asked per RAW line, `uncovered` reported 27 uncovered shapes on
+    a corpus whose comparison had ZERO differences — because a rule that DROPS
+    a varying line changes the line COUNT, and a per-position question then
+    mispairs everything after it. Normalizing FIRST (the same thing `lockstep`
+    does) removes the whole class, and this pins that they agree.
+    """
+    from protocolize.volatiles import uncovered, declared_modes
+    from protocolize.verify import compare
+
+    a, b = tmp_path / 'a', tmp_path / 'b'
+    # Run A has the estimated line twice, run B once — the DROP below must
+    # remove it from both, so the surviving sequences have the same length.
+    _run(a, 'c1', [' TIME ESTIMATE = 0 SECONDS', ' RESULT 1.5',
+                   ' TIME ESTIMATE = 0 SECONDS', ' END'])
+    _run(b, 'c1', [' TIME ESTIMATE = 0 SECONDS', ' RESULT 1.5', ' END'])
+
+    class _Plan:
+        assertions = [{'kind': 'text_lockstep', 'drop': [r'TIME ESTIMATE'],
+                       'rtol': 0.05, 'atol': 0.5}]
+
+    modes = declared_modes(_Plan)
+    left = uncovered(a, b, modes, slack=(0.05, 0.5))
+    diffs = compare.lockstep(
+        (a / 'c1' / 'out.txt').read_text(), (b / 'c1' / 'out.txt').read_text(),
+        drop=[r'TIME ESTIMATE'], rtol=0.05, atol=0.5)
+
+    assert not diffs, 'the two runs agree once the varying line is dropped'
+    assert not left, (
+        'a line the rules DROP cannot leave the sequences mismatched — '
+        'evidence must not report it as uncovered')
+
+
+def test_a_real_difference_is_still_uncovered(tmp_path: Path):
+    """The agreement must not be bought by reporting nothing.
+
+    If the judged value itself moves, BOTH `uncovered` and `lockstep` must see
+    it — otherwise the fix would have turned "evidence" into a rubber stamp.
+    """
+    from protocolize.volatiles import uncovered, declared_modes
+    from protocolize.verify import compare
+
+    a, b = tmp_path / 'a', tmp_path / 'b'
+    _run(a, 'c1', [' TIME ESTIMATE = 0 SECONDS', ' RESULT 1.5'])
+    _run(b, 'c1', [' TIME ESTIMATE = 0 SECONDS', ' RESULT 9.9'])
+
+    class _Plan:
+        assertions = [{'kind': 'text_lockstep', 'drop': [r'TIME ESTIMATE'],
+                       'rtol': 0.05, 'atol': 0.5}]
+
+    modes = declared_modes(_Plan)
+    left = uncovered(a, b, modes, slack=(0.05, 0.5))
+    diffs = compare.lockstep(
+        (a / 'c1' / 'out.txt').read_text(), (b / 'c1' / 'out.txt').read_text(),
+        drop=[r'TIME ESTIMATE'], rtol=0.05, atol=0.5)
+
+    assert diffs, 'a moved judged value IS a difference'
+    assert left and 'RESULT' in ' '.join(v.shape for v in left), (
+        'and it must be reported as uncovered')
