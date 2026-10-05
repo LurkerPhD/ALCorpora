@@ -2,14 +2,21 @@
 
 > 中文版 / Chinese: [README.zh-CN.md](README.zh-CN.md)
 
-**ALCorpora replaces ALForce's L3 — the project-driving layer.** It uses an
-agent's generalization to normalize a **legal corpus project** into protocols:
-a build protocol that replays the project, and a verification protocol that
-says when a run of it was right. ALForce consumes those protocols to drive its
-own iterative development. ALForce is the transpiler; this repo does the half
-ALForce cannot do for itself — take a **real project**, prove it builds with
-its own toolchain and verifies green — so ALForce is developed against a corpus
-that already passes. *(The two repos are not wired together yet.)*
+**ALCorpora is ALForce's PDD layer — Project-Driven Development**, the first of
+ALForce's three layers:
+
+| layer | drives | where |
+|---|---|---|
+| **PDD** — project-driven | a legal project → its protocols | **this repo (ALCorpora)** |
+| **EDD** — error-driven | a project → the minimal reproduction case an error leaves | ALForce |
+| **TDD** — test-driven | those cases → the transpiler's own development | ALForce |
+
+It uses an agent's generalization to normalize a **legal corpus project** into
+protocols — a build protocol that replays it and a verification protocol that
+says when a run of it was right — which ALForce consumes to drive its own
+iterative development. ALForce is the transpiler; this repo does the half it
+cannot do for itself: prove a **real project** builds with its own toolchain
+and verifies green. *(The two repos are not wired together yet.)*
 
 Turn **any project** into two artifacts, each **self-verified at the exit**:
 
