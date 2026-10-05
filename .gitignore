@@ -29,5 +29,8 @@ benchmark/*/benchmark_results/
 # disk and is run from here; `CLAUDE.md` says what it is for.
 regress.sh
 
-# 012's prepare ops and verify driver, written by regress.sh (outside benchmark/ so wipe leaves them)
+# Per-corpus facts (prepare ops, run facts, comparison rules, verify drivers)
+# that regress.sh writes out.  They live outside benchmark/ so `wipe` — which
+# reduces a benchmark folder to its checkout — does not remove them.
 .corpus-012/
+.corpus-013/
