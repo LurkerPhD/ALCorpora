@@ -2,6 +2,10 @@
 
 > English: [README.md](README.md)
 
+**ALCorpora 是 ALForce 底下的语料层** —— ALForce 是转译器;本仓做它自己做不到的
+那一件事:取一个**真实项目**,证明它用自己的工具链构建成功、且它自己的验证是绿的
+——于是 ALForce 是拿一个**已经通过**的语料来开发和判定的,不是拿手搓的样例。
+
 把**任意项目**归一化成两个产物,每个都在**出口自验证**:
 
 | 产物               | 回答的问题                                | schema                                 |
@@ -17,7 +21,6 @@
 的段」的节点。它可以原封不动地交给只看 cc 的消费者——数组结构永不被破坏,允许多加
 条目。
 
-`PLAN.md` 是计划、验收标准与实测证据;本文件讲的是它**实际怎么运转**。
 **请随时维护本文件**——这里一张图如果指向了一个已经搬走的模块,对下一个读者的
 误导和一个过期注释完全一样。
 
@@ -51,8 +54,8 @@
 
 ```
 bench.py                工具入口:一个子命令一个原子操作
-                        (tree/wipe/plan/verify/evidence/row/fetch/admit);
-                        每个都委托,没有一个重写
+                        (tree/wipe/plan/extract/capture/cases/verify/
+                        evidence/row/fetch/admit);每个都委托,没有一个重写
 admit.py                准入流程(编号/取源/原生/§A/§B/记行)
 alcorpora/
   tree_anchor.py        ${TREE} 占位符: expand / escape / 校验(裸 $ 拒绝)
@@ -254,7 +257,7 @@ _prove -> selfcheck.self_check():
 
 ### §A 比对——判据
 
-`selfcheck` 比的是**产物**。`PLAN.md` §A 规定每个产物四项检查(下面这张实测表决定了
+`selfcheck` 比的是**产物**。每个产物规定四项检查(下面这张实测表决定了
 什么该红、什么不该红):
 
 1. **defined symbols**(`nm -g --defined-only`;滤掉 archive 成员头和版本化符号);
@@ -364,10 +367,11 @@ CMakeLists.txt -> cmake+ninja -> 产物 -> §A 比对
 
 一个项目**合法**,当它用自己的工具链构建+验证、其构建协议能重放它(§A)、其验证协议
 在项目自身**和**重放上都得绿(§B)。`fetch-benchmark-project` 技能负责准入一个项目:
-按最小缺失编号编号,并写入它那一行。
+按最小缺失编号编号,并写入它那一行。准进来的项目就是 **ALForce** 拿来做开发的语料。
 
-当前状态见 `benchmark/benchmark.csv`;项目按准入顺序阅读,失败的项目就是下一个要补的
-缺口——不是要丢掉的项目。
+当前状态是 `benchmark/benchmark.csv` —— 19 个项目全部 PASS,由 `sh regress.sh`
+从裸 checkout 重新推导(清空 → 重证 → 全 PASS)。项目按准入顺序阅读,失败的项目
+就是下一个要补的缺口——不是要丢掉的项目。
 
 ## 怎么跑
 
@@ -380,6 +384,9 @@ python3 -m pytest -q
 python3 bench.py tree     <benchmark dir>   # 哪个目录是源码树
 python3 bench.py wipe     <benchmark dir>   # 清**本工具**的产物(不动项目文件)
 python3 bench.py plan     <benchmark dir>   # 计划可执行吗 + 几条 drop/keep/mask
+python3 bench.py extract  <tree> [--out F]  # §A:从已构建的树读出协议并证明它能重放
+python3 bench.py capture  <benchmark dir> --declaration F [--facts F]   # 读出验证协议
+python3 bench.py cases    <benchmark dir>   # 计划发现的用例 id
 python3 bench.py verify   <benchmark dir>   # §B 裁决
 python3 bench.py evidence <benchmark dir> --shift-date   # 两次跑在哪里不一致
 python3 bench.py row      <benchmark dir>   # 它在 benchmark.csv 的那一行

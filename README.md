@@ -2,6 +2,12 @@
 
 > 中文版 / Chinese: [README.zh-CN.md](README.zh-CN.md)
 
+**ALCorpora is the corpus layer under ALForce** — ALForce is the transpiler;
+this repo does the one job ALForce cannot do for itself. It takes a **real
+project**, proves it builds with its own toolchain, and proves that project's
+own verification is green — so ALForce is developed and judged against a
+corpus that already passes, not against hand-made samples.
+
 Turn **any project** into two artifacts, each **self-verified at the exit**:
 
 | artifact | answers | schema |
@@ -19,10 +25,8 @@ protocol's extras), and the last is a node carrying the sections a compile
 database cannot express. It can be handed to a cc-only consumer unchanged —
 the array structure is never disturbed, and extra entries are permitted.
 
-`PLAN.md` is the plan, the acceptance criteria and the measured evidence;
-this file is how the thing actually runs. **Keep it current** — a diagram
-here that names a module that moved misleads the next reader exactly as a
-stale comment does.
+**Keep this file current** — a diagram here that names a module that moved
+misleads the next reader exactly as a stale comment does.
 
 ---
 
@@ -293,7 +297,7 @@ absolute one names the capture tree, which the replay reads.
 
 ### §A comparison — the criteria
 
-`selfcheck` compares **products**. `PLAN.md` §A fixes four checks per product
+`selfcheck` compares **products**. Four checks are defined per product
 (the measured table below decides what may and may not go red):
 
 1. **defined symbols** (`nm -g --defined-only`; drop archive-member headers
@@ -422,11 +426,13 @@ records each one's state.
 A project is **legal** when it builds and verifies with its OWN toolchain,
 its build protocol replays it (§A), and its verification protocol runs green
 on the project AND on the replay (§B). The `fetch-benchmark-project` skill
-admits one, numbers it by the smallest free number, and writes its row.
+admits one, numbers it by the smallest free number, and writes its row. The
+admitted projects are the corpus **ALForce** is developed against.
 
-Current state is `benchmark/benchmark.csv`; the projects are read in
-admission order, and a project that fails is the next gap to close — not a
-project to drop.
+Current state is `benchmark/benchmark.csv` — 19 projects, all PASS, re-derived
+from a bare checkout by `sh regress.sh` (wipe → re-prove → all PASS). The
+projects are read in admission order, and a project that fails is the next gap
+to close — not a project to drop.
 
 ## Running it
 
@@ -440,6 +446,9 @@ python3 -m pytest -q
 python3 bench.py tree     <benchmark dir>   # which directory is the source tree
 python3 bench.py wipe     <benchmark dir>   # remove THIS TOOL's artifacts (not the project's)
 python3 bench.py plan     <benchmark dir>   # executable? and how many drop/keep/mask
+python3 bench.py extract  <tree> [--out F]  # §A: read the protocol OUT of a built tree, prove it replays
+python3 bench.py capture  <benchmark dir> --declaration F [--facts F]   # read the verification protocol
+python3 bench.py cases    <benchmark dir>   # the case ids the plan discovers
 python3 bench.py verify   <benchmark dir>   # §B verdict
 python3 bench.py evidence <benchmark dir> --shift-date   # what two runs disagree on
 python3 bench.py row      <benchmark dir>   # its line in benchmark.csv
