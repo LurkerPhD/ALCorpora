@@ -152,7 +152,7 @@ def roots_from_compile_commands(cc_path: Path | str, *,
     corpus file by its path under the source tree, recording the two
     differently in ``directory``/``file``.
     """
-    from protocolize.compile_commands import parse_compile_commands
+    from alcorpora.compile_commands import parse_compile_commands
 
     cmds = parse_compile_commands(Path(cc_path), tree_root=tree_root)
     if not cmds:

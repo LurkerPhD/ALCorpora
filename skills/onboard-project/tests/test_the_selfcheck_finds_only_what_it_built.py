@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.onboard.selfcheck import self_check
+from alcorpora.onboard.selfcheck import self_check
 from test_onboard_reads_a_make_build import _build, _make_project
 
 pytestmark = pytest.mark.skipif(
@@ -38,7 +38,7 @@ def test_a_product_the_replay_never_built_is_not_compared(tmp_path: Path):
     _make_project(root)
     _build(root)
 
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     proto = extract_protocol(root, tree_root=root)
     assert proto.products, 'the fixture must produce something to lose'
 

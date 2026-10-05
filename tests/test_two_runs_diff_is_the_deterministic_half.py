@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from protocolize import volatiles
+from alcorpora import volatiles
 
 
 def _run(root: Path, name: str, lines: list[str]) -> None:
@@ -158,7 +158,7 @@ def test_only_undeclared_movements_are_reported(tmp_path: Path):
     because a mask that only moves part of a line is coverage the rule itself
     decides.
     """
-    from protocolize.volatiles import declared_modes, uncovered, is_covered
+    from alcorpora.volatiles import declared_modes, uncovered, is_covered
 
     a, b = tmp_path / 'a', tmp_path / 'b'
     _run(a, 'c1', [' DATE: 10/ 3/26', ' RESULT 1.5 ELAPSED 3:55:16',
@@ -195,7 +195,7 @@ def test_a_mask_that_ignores_the_judged_part_does_not_hide_a_real_diff(tmp_path)
     judged number moves too, the pair is NOT covered, however much the line
     otherwise looks handled.
     """
-    from protocolize.volatiles import uncovered
+    from alcorpora.volatiles import uncovered
 
     a, b = tmp_path / 'a', tmp_path / 'b'
     _run(a, 'c1', [' STEP 4 RESULT 1.5 ELAPSED 3:55:16'])
@@ -204,7 +204,7 @@ def test_a_mask_that_ignores_the_judged_part_does_not_hide_a_real_diff(tmp_path)
     class _Plan:
         assertions = [{'mask': [[r'ELAPSED \S+', 'ELAPSED <t>']]}]
 
-    from protocolize.volatiles import declared_modes
+    from alcorpora.volatiles import declared_modes
     left = uncovered(a, b, declared_modes(_Plan))
     assert left, ('the RESULT moved and the mask does not touch it, so this '
                   'is NOT covered')
@@ -219,8 +219,8 @@ def test_uncovered_agrees_with_the_verdict(tmp_path: Path):
     mispairs everything after it. Normalizing FIRST (the same thing `lockstep`
     does) removes the whole class, and this pins that they agree.
     """
-    from protocolize.volatiles import uncovered, declared_modes
-    from protocolize.verify import compare
+    from alcorpora.volatiles import uncovered, declared_modes
+    from alcorpora.verify import compare
 
     a, b = tmp_path / 'a', tmp_path / 'b'
     # Run A has the estimated line twice, run B once — the DROP below must
@@ -251,8 +251,8 @@ def test_a_real_difference_is_still_uncovered(tmp_path: Path):
     If the judged value itself moves, BOTH `uncovered` and `lockstep` must see
     it — otherwise the fix would have turned "evidence" into a rubber stamp.
     """
-    from protocolize.volatiles import uncovered, declared_modes
-    from protocolize.verify import compare
+    from alcorpora.volatiles import uncovered, declared_modes
+    from alcorpora.verify import compare
 
     a, b = tmp_path / 'a', tmp_path / 'b'
     _run(a, 'c1', [' TIME ESTIMATE = 0 SECONDS', ' RESULT 1.5'])

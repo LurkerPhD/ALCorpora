@@ -45,8 +45,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from protocolize.flat_cmake import flat_cmake
-from protocolize.private_protocol import Protocol, expand_tree
+from alcorpora.flat_cmake import flat_cmake
+from alcorpora.private_protocol import Protocol, expand_tree
 
 __all__ = ['CheckReport', 'SelfCheckError', 'self_check']
 

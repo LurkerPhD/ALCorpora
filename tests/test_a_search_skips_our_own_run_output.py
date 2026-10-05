@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.onboard.extract import _our_own_files
-from protocolize.output_layout import RESULTS_DIR
+from alcorpora.onboard.extract import _our_own_files
+from alcorpora.output_layout import RESULTS_DIR
 
 
 def _tree(root: Path) -> Path:

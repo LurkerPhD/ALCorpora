@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.verify import compare
+from alcorpora.verify import compare
 
 
 # ── text_lockstep ─────────────────────────────────────────────
@@ -88,9 +88,9 @@ def test_an_artifact_assertion_moves_when_the_file_is_gone(tmp_path: Path):
     runner, because "the file is missing" is not a text comparison and the
     failure mode it guards is a plan that reads a path nobody wrote.
     """
-    from protocolize.verification_plan import VerificationPlan
-    from protocolize.verify import suite
-    from protocolize.verify.cli import _plan_and_env
+    from alcorpora.verification_plan import VerificationPlan
+    from alcorpora.verify import suite
+    from alcorpora.verify.cli import _plan_and_env
 
     root = tmp_path / 'p'
     (root / 'build').mkdir(parents=True)

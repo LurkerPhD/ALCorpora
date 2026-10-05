@@ -8,7 +8,7 @@ in generic code.
 
 from __future__ import annotations
 
-from protocolize.onboard.extract import _declared_produced, _golden_place
+from alcorpora.onboard.extract import _declared_produced, _golden_place
 
 
 def test_a_project_that_needs_no_declaration_gets_one_artifact():

@@ -11,7 +11,7 @@ them mandatory.
 
 Nothing here is a new mechanism. Each subcommand DELEGATES to the module that
 already owns the behaviour — `admit.py` drives the flow, `verify.cli` runs a
-plan, `protocolize.volatiles` measures what two runs disagree on. This file
+plan, `alcorpora.volatiles` measures what two runs disagree on. This file
 only gives them one name and one place to be found.
 
     bench.py tree    DIR        which directory is the plan's ${TREE}
@@ -231,8 +231,8 @@ def cmd_plan(args: list[str]) -> int:
     if len(args) != 1:
         print('usage: bench.py plan DIR', file=sys.stderr)
         return 2
-    from protocolize.verification_plan import VerificationPlan
-    from protocolize.volatiles import declared_modes
+    from alcorpora.verification_plan import VerificationPlan
+    from alcorpora.volatiles import declared_modes
 
     d = Path(args[0]).resolve()
     p = d / 'verification_plan.json'
@@ -276,7 +276,7 @@ def cmd_verify(args: list[str]) -> int:
               file=sys.stderr)
         return 1
     return subprocess.run(
-        [sys.executable, '-m', 'protocolize.verify.cli', str(d),
+        [sys.executable, '-m', 'alcorpora.verify.cli', str(d),
          '--tree', str(tree_of(d)), '--origin', str(d / 'origin_release')],
         cwd=str(REPO)).returncode
 
@@ -285,9 +285,9 @@ def cmd_evidence(args: list[str]) -> int:
     """What two reference runs DISAGREE on, minus what the plan already covers.
 
     The measurement a comparison rule is written against. Delegates to
-    `protocolize.volatiles`, which owns the definition.
+    `alcorpora.volatiles`, which owns the definition.
     """
-    from protocolize import volatiles
+    from alcorpora import volatiles
     if not args:
         print('usage: bench.py evidence DIR [--shift-date]', file=sys.stderr)
         return 2
@@ -329,7 +329,7 @@ def cmd_extract(args: list[str]) -> int:
     units, which products — so it is a command, not a paragraph.
     """
     import argparse
-    from protocolize.onboard.extract import ExtractionError, extract_and_prove
+    from alcorpora.onboard.extract import ExtractionError, extract_and_prove
 
     p = argparse.ArgumentParser(prog='bench.py extract',
                                 description=cmd_extract.__doc__.splitlines()[0])
@@ -367,9 +367,9 @@ def cmd_capture(args: list[str]) -> int:
     plan that judges.
     """
     import argparse
-    from protocolize.onboard.extract import capture_verification
-    from protocolize.private_protocol import Protocol
-    from protocolize.verification_plan import VerificationPlan
+    from alcorpora.onboard.extract import capture_verification
+    from alcorpora.private_protocol import Protocol
+    from alcorpora.verification_plan import VerificationPlan
 
     p = argparse.ArgumentParser(prog='bench.py capture',
                                 description=cmd_capture.__doc__.splitlines()[0])
@@ -438,7 +438,7 @@ def cmd_cases(args: list[str]) -> int:
         print(f'no verification_plan.json under {d}', file=sys.stderr)
         return 1
     return subprocess.run(
-        [sys.executable, '-m', 'protocolize.verify.cli', str(d),
+        [sys.executable, '-m', 'alcorpora.verify.cli', str(d),
          '--tree', str(tree_of(d)), '--list'],
         cwd=str(REPO)).returncode
 

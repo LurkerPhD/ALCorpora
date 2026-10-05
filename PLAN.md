@@ -1,4 +1,4 @@
-# PLAN — protocolize: any project → build protocol + verification protocol
+# PLAN — ALCorpora: any project → build protocol + verification protocol
 
 ## What this repo is
 
@@ -21,7 +21,7 @@ system, or a project — that is the point of the repo boundary.
 Extracted from `deepf2c` and committed (`b8001a6`), self-contained:
 
 ```
-protocolize/
+alcorpora/
   tree_anchor.py        ${TREE}: the tree a replay must rebuild; $ escaping
   compile_commands.py   read a compile database (cc); TREE expansion
   output_layout.py      which roots the build's own sources live under
@@ -185,9 +185,9 @@ A legal project is **self-contained**: everything the build/verification needs i
 
 ## Key files (this repo)
 
-* `protocolize/onboard/selfcheck.py` — the §A comparison
-* `protocolize/onboard/extract.py` — capture (facts elimination lands here)
-* `protocolize/private_protocol.py`, `protocolize/verification_plan.py` — schema
-* `protocolize/flat_cmake.py` — runtime_include → extra_includes
-* `protocolize/verify/{suite,cli,reference}.py` — run + verdict
+* `alcorpora/onboard/selfcheck.py` — the §A comparison
+* `alcorpora/onboard/extract.py` — capture (facts elimination lands here)
+* `alcorpora/private_protocol.py`, `alcorpora/verification_plan.py` — schema
+* `alcorpora/flat_cmake.py` — runtime_include → extra_includes
+* `alcorpora/verify/{suite,cli,reference}.py` — run + verdict
 * `skills/onboard-project/` — the skill (research + research-and-run; fills the templates)

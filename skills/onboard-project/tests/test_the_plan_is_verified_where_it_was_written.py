@@ -32,7 +32,7 @@ def _load_onboard():
 def test_the_plan_is_verified_in_the_directory_it_was_written(tmp_path,
                                                               monkeypatch):
     mod = _load_onboard()
-    from protocolize.verify import cli
+    from alcorpora.verify import cli
 
     tree = tmp_path / 'origin_release'
     (tree / 'build').mkdir(parents=True)          # CMake's own subdirectory

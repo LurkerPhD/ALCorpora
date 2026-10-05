@@ -1,6 +1,6 @@
 """A tree that is not there is an answer, not a crash."""
 from pathlib import Path
-from protocolize.onboard.make_extract import make_directories
+from alcorpora.onboard.make_extract import make_directories
 
 
 def test_a_missing_tree_is_not_a_make_directory(tmp_path: Path):

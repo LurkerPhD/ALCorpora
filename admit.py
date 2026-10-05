@@ -86,9 +86,9 @@ def _make_agent(args):
     two, and it keeps a missing `claude` from ever reading as a verdict about
     a project — it reads as `AGENT_ERROR`, which is what it is.
     """
-    from protocolize.agent import Agent
+    from alcorpora.agent import Agent
     cmd = (args.agent_cmd
-           or os.environ.get('PROTOCOLIZE_AGENT_CMD')
+           or os.environ.get('ALCORPORA_AGENT_CMD')
            or 'claude')
     return Agent(cmd=cmd, max_calls=args.max_agent_calls)
 
@@ -296,7 +296,7 @@ def _seam_native(M: dict, args, agent, src: Path, dest: Path,
                  f'Output, tail:\n{log[-4000:]}')
     want = ('The commands that DO build and verify this project, or the '
             'patches it needs before it can.')
-    from protocolize.agent import AgentUnavailable, SeamFailed
+    from alcorpora.agent import AgentUnavailable, SeamFailed
     try:
         resp = agent.ask(
             'A', _seam_prompt('A', src, situation, want,
@@ -305,7 +305,7 @@ def _seam_native(M: dict, args, agent, src: Path, dest: Path,
     except (AgentUnavailable, SeamFailed) as exc:
         return _report_seam_failure(exc)
 
-    from protocolize import seams
+    from alcorpora import seams
     if resp.kind == 'protocol_gap':
         # Not a failure and not retried: the FORM is inadequate, and growing
         # the form is not something a seam may do.
@@ -377,7 +377,7 @@ def _report_seam_failure(exc) -> bool:
     infrastructure problem, and reporting it as a refusal would send a reader
     to research the project instead of the environment.
     """
-    from protocolize.agent import AgentUnavailable
+    from alcorpora.agent import AgentUnavailable
     if isinstance(exc, AgentUnavailable):
         print(f'AGENT_ERROR — {exc}', file=sys.stderr)
     else:
@@ -472,7 +472,7 @@ def _project_input(M: dict, src: Path, value: str | None,
 #: Two steps have NO seam, and the distinction is load-bearing:
 #:
 #:   * `'A'` — the extractor could not read the build.  That is a TOOL defect:
-#:     the fix belongs in `protocolize/`, and opening a seam here would send
+#:     the fix belongs in `alcorpora/`, and opening a seam here would send
 #:     the agent to work around a broken tool instead of getting it repaired.
 #:   * `'B-flat'` — the plan is green on the project but not on the replay.
 #:     The protocol and the build disagree, which is likewise ours to fix.
@@ -620,7 +620,7 @@ def _replace_not_extend(seam: str, args) -> str:
 def _ask_seam(agent, seam: str, accepts, src: Path, work: Path,
               proof, args) -> bool:
     """Ask at *seam* and apply what comes back.  True when something changed."""
-    from protocolize.agent import AgentUnavailable, SeamFailed
+    from alcorpora.agent import AgentUnavailable, SeamFailed
     agent.log_dir = work
     want = ('\n'.join(f'* "kind": "{k}"' for k in accepts)
             + '\n\nPick the one that fits what you find. If none does, answer '
@@ -713,7 +713,7 @@ def main(argv=None, namespace: dict | None = None) -> int:
                         'against the project source.')
     p.add_argument('--agent-cmd', default=None,
                    help='how to invoke an agent at a seam (default: $'
-                        'PROTOCOLIZE_AGENT_CMD, else `claude`). Seams are '
+                        'ALCORPORA_AGENT_CMD, else `claude`). Seams are '
                         'where judgement is needed and a value cannot be read '
                         'out of the project.')
     p.add_argument('--max-agent-calls', type=int, default=6,

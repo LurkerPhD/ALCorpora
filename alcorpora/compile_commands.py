@@ -14,7 +14,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from protocolize.tree_anchor import TREE, expand_tree
+from alcorpora.tree_anchor import TREE, expand_tree
 
 FORTRAN_EXTS = {'.f', '.f77', '.for', '.f90', '.f95', '.f03', '.f08',
                 '.F', '.F77', '.FOR', '.F90', '.F95', '.F03', '.F08'}

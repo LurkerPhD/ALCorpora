@@ -62,8 +62,8 @@ ENTIRE file over one unknown key. A valid compile database is an EXPORT
 **The rules that decide the entries — which units, which products, which are
 the project's own, how a path is spelled — are implemented, and each one's
 docstring carries its reasoning and the measurements behind it.** They live in
-`protocolize/onboard/extract.py` (`_units`, `_products`, `_generated`,
-`own_roots_for`) and `protocolize/tree_anchor.py` (the `${TREE}` spelling).
+`alcorpora/onboard/extract.py` (`_units`, `_products`, `_generated`,
+`own_roots_for`) and `alcorpora/tree_anchor.py` (the `${TREE}` spelling).
 Read them there when a project needs a rule extended, and read the refusal
 `bench.py extract` prints when one is violated — that refusal names the rule.
 
@@ -104,7 +104,7 @@ database.** For those the tool has to fall back to `make -Bn`, which is a
 GUESS at what make would do and has a blind spot that fails silently:
 `$(shell …)` does NOT expand under `-n`, so a Makefile that generates its
 sources through a shell command shows no rule for them
-(`protocolize/onboard/make_extract.py` documents this). An exported
+(`alcorpora/onboard/make_extract.py` documents this). An exported
 `compile_commands.json` is a static record of what actually ran and has no
 such hole — so if the build system can produce one, ask for it:
 
@@ -205,7 +205,7 @@ build half has:**
   run` (no registered tests, no case list, no per-case directory); or
   `ambiguous: N acceptance declarations are reachable` — a refusal by design,
   since picking one silently verifies the corpus against another project's
-  cases. Extend `capture_verification` in `protocolize/onboard/extract.py`,
+  cases. Extend `capture_verification` in `alcorpora/onboard/extract.py`,
   with a test, so the next project with that shape is read too. **Do NOT
   hand-write the plan instead**: a plan typed by hand is a value nobody can
   re-derive, and the extractor keeps the gap for every project after this one.
@@ -248,7 +248,7 @@ as the golden, so "a failed reference run captures nothing" holds by
 construction rather than by anyone remembering it.
 
 **A non-zero exit names the problem, and `problems()` is the authority** — the
-refusals are implemented there (`protocolize/verification_plan.py`), not in
+refusals are implemented there (`alcorpora/verification_plan.py`), not in
 this page, and each one is a plan that could produce a verdict with nothing
 behind it: no `require_min`; a `process` run that stages no inputs; a
 `golden.source: none` with no stamp; a bare `$`; a `golden.root` that names a
@@ -386,7 +386,7 @@ python3 bench.py cases <build tree>
 # whole comparison hides behind, and this shows it in one line.
 ```
 
-`protocolize/onboard/` holds the working implementation of all of the above
+`alcorpora/onboard/` holds the working implementation of all of the above
 for ninja and make, and `onboard/selfcheck.py` holds the §A proof. Read them
 as a reference for the method — and as something you may extend, replace or
 ignore if the project in front of you needs a different approach. The method

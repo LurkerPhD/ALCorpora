@@ -17,7 +17,7 @@ from . import counts as count
 from . import log
 from .log import Action
 from .suite import PlanRunError
-from protocolize.output_layout import RESULTS_DIR
+from alcorpora.output_layout import RESULTS_DIR
 # The base a config's relative paths resolve against when the config
 # does not name its own directory.  The process's cwd, because this
 # tool is not tied to any one checkout.
@@ -50,7 +50,7 @@ def load_plan(cfg: dict):
     path = plan_path(cfg)
     if not path.is_file() and not Path(str(path) + '.gz').is_file():
         return None
-    from protocolize.verification_plan import VerificationPlan
+    from alcorpora.verification_plan import VerificationPlan
     return VerificationPlan.load(path)
 
 
@@ -163,7 +163,7 @@ def protocol_tests(cfg: dict) -> list:
         path = Path(cfg.get('_config_dir', _CONFIG_BASE)) / path
     if not path.is_file() and not Path(str(path) + '.gz').is_file():
         return []
-    from protocolize.private_protocol import Protocol
+    from alcorpora.private_protocol import Protocol
     return list(Protocol.load(path).tests or [])
 
 

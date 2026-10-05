@@ -33,7 +33,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from protocolize.onboard.extract import capture_prepare
+from alcorpora.onboard.extract import capture_prepare
 
 _ROOT = Path(__file__).resolve().parents[1]
 _FETCH_PY = _ROOT / 'skills/fetch-benchmark-project/scripts/fetch.py'

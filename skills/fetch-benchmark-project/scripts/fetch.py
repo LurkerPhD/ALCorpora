@@ -31,7 +31,7 @@ REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from protocolize.output_layout import RESULTS_DIR  # noqa: E402
+from alcorpora.output_layout import RESULTS_DIR  # noqa: E402
 
 BENCH = REPO / 'benchmark'
 BENCH_CSV = BENCH / 'benchmark.csv'
@@ -403,7 +403,7 @@ def _measured_drops(plan, env, work: Path) -> list:
     failure here is not a verdict about the project — the seam remains the
     fallback for whatever a measurement cannot reach.
     """
-    from protocolize import volatiles
+    from alcorpora import volatiles
     try:
         root_a, root_b = volatiles.capture_twice(plan, env, work,
                                                  shift_date=True)
@@ -452,11 +452,11 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
     row keeps the description it already had instead of every replay
     relabelling an in-tree sample as "fetched from source".
     """
-    from protocolize.onboard.extract import (ExtractionError,
+    from alcorpora.onboard.extract import (ExtractionError,
                                              capture_verification,
                                              extract_and_prove)
-    from protocolize.verification_plan import VerificationPlan
-    from protocolize.verify import cli
+    from alcorpora.verification_plan import VerificationPlan
+    from alcorpora.verify import cli
 
     work = dest / '.work'
     try:
@@ -496,8 +496,8 @@ def prove_legal(dest: Path, src: Path, build: Path, number: int,
 
     origin = dest / 'origin_release'
     if plan.golden.source == 'reference_run':
-        from protocolize.verify import cli as cli_mod
-        from protocolize.verify import reference, suite
+        from alcorpora.verify import cli as cli_mod
+        from alcorpora.verify import reference, suite
         cfg = {'target_dir': str(dest), 'tree_root': str(src),
                'protocol': str(dest / 'protocol.json'), '_config_dir': dest}
         # The reference run is a RUN like any other — of the project's own

@@ -26,8 +26,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from protocolize.onboard.extract import gitmodules_paths, own_roots_for
-from protocolize.private_protocol import TREE, CompileEntry, Protocol
+from alcorpora.onboard.extract import gitmodules_paths, own_roots_for
+from alcorpora.private_protocol import TREE, CompileEntry, Protocol
 
 
 def _corpus(tmp_path: Path, vendored: tuple[str, ...]):

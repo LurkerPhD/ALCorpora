@@ -301,7 +301,7 @@ def is_covered(a_line: str, b_line: str, modes: tuple, *,
     is why "evidence empty" is not by itself the completion test — the
     verdict is.
     """
-    from protocolize.verify import compare
+    from alcorpora.verify import compare
     drop, keep, mask = modes
     if not (drop or keep or mask):
         return False
@@ -328,7 +328,7 @@ def declared_slack(plan) -> tuple:
     for a in (getattr(plan, 'assertions', None) or []):
         if hasattr(a, 'get') and a.get('kind') in ('text_lockstep',
                                                    'field_assertion'):
-            from protocolize.verify import compare
+            from alcorpora.verify import compare
             return (float(a.get('rtol', compare.DEFAULT_RTOL)),
                     float(a.get('atol', compare.DEFAULT_ATOL)))
     return None
@@ -351,7 +351,7 @@ def uncovered(root_a: Path, root_b: Path, modes: tuple,
     first removes that whole class: the dropped line is gone from both sides,
     the counts agree, and the shift never appears.
     """
-    from protocolize.verify import compare
+    from alcorpora.verify import compare
     drop, keep, mask = modes
     rtol, atol = slack if slack else (compare.DEFAULT_RTOL, compare.DEFAULT_ATOL)
     a, b = _golden_files(Path(root_a)), _golden_files(Path(root_b))
@@ -410,7 +410,7 @@ def capture_twice(plan, env, work_root: Path, *, shift_date: bool = False):
     import dataclasses
     import os
     import shutil
-    from protocolize.verify import suite as suite_mod
+    from alcorpora.verify import suite as suite_mod
 
     work_root = Path(work_root)
     roots = []
@@ -450,8 +450,8 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
     import tempfile
-    from protocolize.verification_plan import VerificationPlan
-    from protocolize.verify import cli as cli_mod
+    from alcorpora.verification_plan import VerificationPlan
+    from alcorpora.verify import cli as cli_mod
 
     p = argparse.ArgumentParser(description=main.__doc__.splitlines()[0])
     p.add_argument('build_dir',
@@ -471,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
 
     build_dir = Path(args.build_dir).resolve()
     plan = VerificationPlan.load(build_dir / 'verification_plan.json')
-    from protocolize.verify.cli import _plan_and_env
+    from alcorpora.verify.cli import _plan_and_env
     _, env = _plan_and_env(build_dir, args.origin, args.exe, None, args.tree)
 
     work = Path(args.keep) if args.keep else Path(

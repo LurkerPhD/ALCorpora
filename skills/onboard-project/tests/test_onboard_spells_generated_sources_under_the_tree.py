@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.private_protocol import TREE, expand_tree
+from alcorpora.private_protocol import TREE, expand_tree
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which('cmake') and shutil.which('ninja')),
@@ -74,7 +74,7 @@ def extracted(tmp_path_factory):
                    check=True, capture_output=True)
     subprocess.run(['cmake', '--build', str(build)],
                    check=True, capture_output=True)
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     return extract_protocol(build, comment='probe')
 
 
@@ -133,7 +133,7 @@ def test_a_relative_root_is_refused_not_silently_absolute(tmp_path):
     Measured on the real LAPACK tree: 3489 generated sources and 65 products,
     none of them replayable, no error anywhere.
     """
-    from protocolize.onboard.extract import ExtractionError, Toolchain
+    from alcorpora.onboard.extract import ExtractionError, Toolchain
     with pytest.raises(ExtractionError) as exc:
         Toolchain(build=Path('some/relative/build'),
                   root=Path('some/relative/build'))
@@ -142,6 +142,6 @@ def test_a_relative_root_is_refused_not_silently_absolute(tmp_path):
 
 def test_infer_tree_root_answers_absolutely():
     """It is the answer to "what does ${TREE} mean" — it must be usable."""
-    from protocolize.onboard.extract import infer_tree_root
+    from alcorpora.onboard.extract import infer_tree_root
     got = infer_tree_root(Path('.'))
     assert got.is_absolute(), got

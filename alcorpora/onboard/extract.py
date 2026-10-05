@@ -61,8 +61,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from protocolize.output_layout import _owning_root
-from protocolize.private_protocol import (TREE, CompileEntry, Product, Protocol,
+from alcorpora.output_layout import _owning_root
+from alcorpora.private_protocol import (TREE, CompileEntry, Product, Protocol,
                                   canonical_stem, escape_tree, expand_tree,
                                   normalise_build)
 
@@ -116,7 +116,7 @@ class ExtractionError(RuntimeError):
 class Toolchain:
     """The build system of an already-built tree, as a queryable interface.
 
-    *root* is what :data:`protocolize.private_protocol.TREE` will DENOTE: the tree
+    *root* is what :data:`alcorpora.private_protocol.TREE` will DENOTE: the tree
     the protocol is meant to be replayed in.  Everything below it is
     re-spelled with the placeholder, and everything else keeps its absolute
     path — a path outside the tree names a file the replay READS rather than
@@ -313,7 +313,7 @@ class Toolchain:
         it stands.
 
         The re-rooting escapes ``$`` (see
-        :func:`protocolize.private_protocol.escape_tree`).  It has to: a build
+        :func:`alcorpora.private_protocol.escape_tree`).  It has to: a build
         system's own variables and a shell's are spelled with the same
         character, and an unescaped one left in a recorded command is read
         back as a placeholder nobody wrote.
@@ -1545,7 +1545,7 @@ def extract_protocol(build_dir: Path | str, *,
     guessed wrong would get an error naming the tool it did not use — which
     is exactly how this used to fail for a make project.
 
-    *tree_root* is what :data:`protocolize.private_protocol.TREE` will mean — the
+    *tree_root* is what :data:`alcorpora.private_protocol.TREE` will mean — the
     tree the sources live in, which is what makes the result movable.  It
     defaults to what each backend's own layout implies.
 
@@ -1887,7 +1887,7 @@ def capture_verification(proto: Protocol, build: Path | str,
     live with the tool rather than beside the corpus, so a search rooted at
     the project finds nothing and the honest answer is the caller's.
 
-    Returns the plan as JSON-ready data; :class:`protocolize.verification_plan` is
+    Returns the plan as JSON-ready data; :class:`alcorpora.verification_plan` is
     what reads it.
     """
     build = Path(build).resolve()
@@ -2629,7 +2629,7 @@ def _our_own_files(paths, *, dirs: bool = False) -> list[Path]:
     Sorted, so the answer does not depend on the filesystem's enumeration
     order.
     """
-    from protocolize.output_layout import RUN_OUTPUT_DIRS
+    from alcorpora.output_layout import RUN_OUTPUT_DIRS
 
     out: list[Path] = []
     for p in sorted(paths):

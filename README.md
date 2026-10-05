@@ -1,4 +1,4 @@
-# protocolize
+# ALCorpora
 
 > 中文版 / Chinese: [README.zh-CN.md](README.zh-CN.md)
 
@@ -63,7 +63,7 @@ bench.py                THE TOOL ENTRY POINT: one atomic operation per
                         subcommand (tree/wipe/plan/verify/evidence/row/
                         fetch/admit); each delegates, none reimplements
 admit.py                the admission flow (number, fetch, native, §A, §B, row)
-protocolize/
+alcorpora/
   tree_anchor.py        ${TREE} placeholder: expand / escape / validate (bare $ refused)
   compile_commands.py   read a compile database; a protocol CONTAINS one
   output_layout.py      output-directory rule; repo root; longest owning root
@@ -78,7 +78,7 @@ protocolize/
     selfcheck.py        §A: rebuild from the protocol and compare
   verify/
     suite.py            run a verification plan; compute the verdict
-    cli.py              CLI: python3 -m protocolize.verify.cli <build tree>
+    cli.py              CLI: python3 -m alcorpora.verify.cli <build tree>
     reference.py        origin (golden) capture; the plan's run-time environment
     compare.py          text/field comparison (lockstep / numclose / column model);
                         drop / keep / mask
@@ -449,7 +449,7 @@ python3 bench.py admit    <benchmark dir> [--build … ]   # re-prove one
 # §A end to end, on a real build
 python3 -c "
 from pathlib import Path
-from protocolize.onboard.extract import extract_and_prove
+from alcorpora.onboard.extract import extract_and_prove
 proto, report = extract_and_prove('<build tree>', tree_root='<root>',
                                   work_root='<scratch>')
 print(report.ok, len(proto.compilation))

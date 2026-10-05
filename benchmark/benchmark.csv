@@ -13,3 +13,8 @@ number,name,language,build_system,verification,native,build_protocol_a,verify_on
 012,NASTRAN-95,fortran,make,nastran on 132 verification decks (golden),yes,yes,yes,yes,PASS,one_per_dir; 1831 units; 5 products replayed in A; 132/132 on the project and on the replay
 013,MYSTRAN,fortran,CMake+Ninja,own runner over 488 decks (MYSTRAN_Validation),yes,yes,yes,yes,PASS,488 decks; 488/488 on the project and on the replay; in-source build; its own CI smoke run and the comparison rules are written down in regress.sh
 014,lapack,fortran,CMake+Ninja,ctest,yes,yes,yes,yes,PASS,6794 units; 65 products replayed in A; 215/215 on the project and on the replay
+015,wannier90,fortran,CMake+Ninja,ctest (101 regression tests),yes,yes,yes,yes,PASS,62k LOC; 5 products replayed in A; 101/101 on the project and on the replay
+016,json-fortran,fortran,CMake+Ninja,ctest (55 tests),yes,yes,yes,yes,PASS,26k LOC; tests are EXCLUDE_FROM_ALL so the build makes the `build_tests` target; 55 products replayed in A; 55/55 on the project and on the replay
+017,toml-f,fortran,CMake+Ninja,ctest (6 tests),yes,yes,yes,yes,PASS,22k LOC; 8 products replayed in A; 6/6 on the project and on the replay
+018,arpack-ng,fortran,CMake+Ninja,ctest (10 tests),yes,yes,yes,yes,PASS,147k LOC; BLAS/LAPACK declared (no dev symlinks on this box); 11 products replayed in A; 10/10 on the project and on the replay
+019,libxc,cpp,CMake+Ninja,ctest (23 tests),yes,yes,yes,yes,PASS,"flow admitted it UNAIDED (default configure/build/test, no seam); 11 products replayed in A; 23/23 on the project and on the replay"

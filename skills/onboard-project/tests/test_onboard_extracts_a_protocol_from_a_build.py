@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.private_protocol import TREE, Protocol, check_tree_invariant
+from alcorpora.private_protocol import TREE, Protocol, check_tree_invariant
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which('cmake') and shutil.which('ninja')),
@@ -89,7 +89,7 @@ def built(tmp_path_factory):
 # ── the compile half ──────────────────────────────────────────
 
 def test_it_reads_the_units_the_build_compiles(built):
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     stems = {e.stem for e in proto.compilation}
@@ -103,7 +103,7 @@ def test_it_does_not_scan_for_sources_the_build_ignores(built):
     a scan would include it, and then the flow would build something the
     corpus does not.
     """
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     (root / 'source' / 'orphan.f90').write_text(
         '      subroutine nobody\n      end subroutine nobody\n')
@@ -112,7 +112,7 @@ def test_it_does_not_scan_for_sources_the_build_ignores(built):
 
 
 def test_every_entry_carries_a_usable_command(built):
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     for e in proto.compilation:
@@ -123,7 +123,7 @@ def test_every_entry_carries_a_usable_command(built):
 
 def test_every_unit_is_recorded_once(built):
     """The protocol keys a unit by its stem, so no stem appears twice."""
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     stems = [e.stem for e in proto.compilation]
@@ -134,7 +134,7 @@ def test_every_unit_is_recorded_once(built):
 
 def test_the_stem_has_no_extension(built):
     """`isamax.f` and `isamax.cpp` must be one unit, so the key carries none."""
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     for e in proto.compilation:
@@ -144,7 +144,7 @@ def test_the_stem_has_no_extension(built):
 # ── the products ──────────────────────────────────────────────
 
 def test_it_records_the_link_products(built):
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     kinds = {p.kind for p in proto.products}
@@ -154,7 +154,7 @@ def test_it_records_the_link_products(built):
 
 def test_a_products_members_are_stems_so_a_flip_follows(built):
     """The property that makes the state switch work; see flat_cmake."""
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     defined = {e.stem for e in proto.compilation}
@@ -169,7 +169,7 @@ def test_a_products_members_are_stems_so_a_flip_follows(built):
 
 def test_it_records_who_provides_and_uses_each_module(built):
     """A converted unit emits no .mod, so the graph must be known up front."""
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     mod = next(e for e in proto.compilation if 'm_mod' in e.stem)
@@ -181,7 +181,7 @@ def test_it_records_who_provides_and_uses_each_module(built):
 # ── the protocol must be sound and movable ────────────────────
 
 def test_the_extracted_protocol_has_no_problems(built):
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     assert proto.problems() == []
@@ -201,7 +201,7 @@ def test_recorded_commands_are_re_rooted_to_the_placeholder(built):
     The rule the protocol states: everything that is not a stem is read from
     the origin tree by ABSOLUTE path.
     """
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
 
@@ -227,7 +227,7 @@ def test_recorded_commands_are_re_rooted_to_the_placeholder(built):
 
 
 def test_it_survives_a_json_round_trip(built, tmp_path):
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     root, build = built
     proto = extract_protocol(build, tree_root=root)
     path = tmp_path / 'p.json.gz'
@@ -293,7 +293,7 @@ def test_a_generated_source_in_a_graph_is_still_captured(tmp_path):
     extractor could read.  The pairing must be the tail, and each command must
     name the output it is paired with.
     """
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
 
     root = _make_gensrc_corpus(tmp_path)
     build = _configure(root)
@@ -324,7 +324,7 @@ def test_a_nested_shell_fragment_is_not_treated_as_a_path(tmp_path):
     The fragment must be spelled INSIDE, so its produced paths are re-rooted
     and its `cd`/`&&` are left for the shell.
     """
-    from protocolize.onboard.extract import Toolchain
+    from alcorpora.onboard.extract import Toolchain
 
     root = (tmp_path / 'tree')
     build = root / 'build'
@@ -354,7 +354,7 @@ def test_an_option_value_is_not_prefixed_as_a_path(tmp_path):
     replay died on the unit it was for.  Only a produced, ABSOLUTE value may
     be re-rooted.
     """
-    from protocolize.onboard.extract import Toolchain
+    from alcorpora.onboard.extract import Toolchain
 
     root = (tmp_path / 'tree')
     build = root / 'build'

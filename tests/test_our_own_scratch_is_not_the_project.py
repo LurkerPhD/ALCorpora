@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from protocolize.onboard.extract import _find_case_dirs, _find_case_lists
-from protocolize.onboard.selfcheck import _mirror
+from alcorpora.onboard.extract import _find_case_dirs, _find_case_lists
+from alcorpora.onboard.selfcheck import _mirror
 
 
 def test_the_mirror_does_not_recurse_into_itself(tmp_path: Path):

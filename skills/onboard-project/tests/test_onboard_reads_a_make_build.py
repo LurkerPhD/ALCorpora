@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.private_protocol import TREE, check_tree_invariant
+from alcorpora.private_protocol import TREE, check_tree_invariant
 
 pytestmark = pytest.mark.skipif(not shutil.which('make'),
                                 reason='needs make')
@@ -99,7 +99,7 @@ def built(tmp_path_factory):
 
 
 def _protocol(root: Path):
-    from protocolize.onboard.extract import extract_protocol
+    from alcorpora.onboard.extract import extract_protocol
     return extract_protocol(root, tree_root=root)
 
 
@@ -192,7 +192,7 @@ def test_an_up_to_date_tree_still_yields_its_commands(built):
 
 def test_a_project_with_no_build_is_refused(tmp_path):
     """Refused with the gap named, never a plausible-but-empty protocol."""
-    from protocolize.onboard.extract import ExtractionError, extract_protocol
+    from alcorpora.onboard.extract import ExtractionError, extract_protocol
     empty = tmp_path / 'nothing'
     empty.mkdir()
     (empty / 'a.f').write_text('      subroutine a\n      end\n')
@@ -213,7 +213,7 @@ def test_the_caller_does_not_have_to_say_what_tree_means(built):
     So extracting with no `tree_root` must work, and must agree with the
     root the entries themselves imply.
     """
-    from protocolize.onboard.extract import extract_protocol, infer_tree_root
+    from alcorpora.onboard.extract import extract_protocol, infer_tree_root
     derived = extract_protocol(built, verify=False)
     stated = extract_protocol(built, tree_root=infer_tree_root(built),
                               verify=False)
@@ -228,7 +228,7 @@ def test_a_generated_source_travels_with_the_protocol(built):
     belongs to the placeholder; a unit's source outside it does not move and
     stays absolute, because a replay reads the very same file.
     """
-    from protocolize.private_protocol import TREE
+    from alcorpora.private_protocol import TREE
     proto = _protocol(built)
     for e in proto.compilation:
         inside = e.file.startswith(TREE)
@@ -248,7 +248,7 @@ def test_a_product_is_spelled_under_the_tree(built):
     writes the archive and the executables back into the capture tree.
     Measured on NASTRAN-95: all four products came out absolute.
     """
-    from protocolize.private_protocol import TREE
+    from alcorpora.private_protocol import TREE
     proto = _protocol(built)
     assert proto.products, 'the fixture links nothing'
     for p in proto.products:

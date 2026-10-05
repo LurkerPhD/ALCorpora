@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import textwrap
 
-from protocolize.verify import compare
+from alcorpora.verify import compare
 
 #: Three data rows under one declared table.  Row 1 matches the rule (3
 #: tokens, first an int) and is compared field-wise; row 2 has five tokens,

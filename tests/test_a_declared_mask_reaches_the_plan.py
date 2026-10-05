@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from protocolize.onboard.extract import _corpus_rules, _lockstep_rules
+from alcorpora.onboard.extract import _corpus_rules, _lockstep_rules
 
 
 def _decl(tmp_path: Path, comparison: dict) -> Path:

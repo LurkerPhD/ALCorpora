@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from protocolize.verification_plan import (Golden, Run, Target,
+from alcorpora.verification_plan import (Golden, Run, Target,
                                            VerificationPlan)
-from protocolize.verify import reference
-from protocolize.verify.suite import PlanRunError
+from alcorpora.verify import reference
+from alcorpora.verify.suite import PlanRunError
 
 
 def _plan(kind: str, product: str = '', dirs=()) -> VerificationPlan:

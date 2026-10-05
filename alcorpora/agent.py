@@ -77,7 +77,7 @@ class Agent:
         if not self.available():
             raise AgentUnavailable(
                 'no agent command: pass --agent-cmd or set '
-                'PROTOCOLIZE_AGENT_CMD')
+                'ALCORPORA_AGENT_CMD')
         key = (seam, signature)
         if key in self.cache:
             return self.cache[key]

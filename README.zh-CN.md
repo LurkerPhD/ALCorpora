@@ -1,4 +1,4 @@
-# protocolize
+# ALCorpora
 
 > English: [README.md](README.md)
 
@@ -54,7 +54,7 @@ bench.py                工具入口:一个子命令一个原子操作
                         (tree/wipe/plan/verify/evidence/row/fetch/admit);
                         每个都委托,没有一个重写
 admit.py                准入流程(编号/取源/原生/§A/§B/记行)
-protocolize/
+alcorpora/
   tree_anchor.py        ${TREE} 占位符: expand / escape / 校验(裸 $ 拒绝)
   compile_commands.py   读 compile database;协议**内嵌**一份
   output_layout.py      输出目录规则;repo root;longest owning root
@@ -69,7 +69,7 @@ protocolize/
     selfcheck.py        §A:从协议重建并比对
   verify/
     suite.py            运行一个验证计划;算裁决
-    cli.py              CLI: python3 -m protocolize.verify.cli <build tree>
+    cli.py              CLI: python3 -m alcorpora.verify.cli <build tree>
     reference.py        origin(黄金)捕获;计划的运行时环境
     compare.py          text/field 比对(lockstep / numclose / 列模型);
                         drop / keep / mask
@@ -389,7 +389,7 @@ python3 bench.py admit    <benchmark dir> [--build … ]   # 重证一个已准�
 # §A 端到端,在一个真构建上
 python3 -c "
 from pathlib import Path
-from protocolize.onboard.extract import extract_and_prove
+from alcorpora.onboard.extract import extract_and_prove
 proto, report = extract_and_prove('<build tree>', tree_root='<root>',
                                   work_root='<scratch>')
 print(report.ok, len(proto.compilation))

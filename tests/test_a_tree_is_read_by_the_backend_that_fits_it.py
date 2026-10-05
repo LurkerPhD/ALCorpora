@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.onboard.extract import (_is_ninja_tree, _what_the_tree_is)
+from alcorpora.onboard.extract import (_is_ninja_tree, _what_the_tree_is)
 
 
 def test_a_cache_alone_is_not_a_ninja_tree(tmp_path: Path):
@@ -54,7 +54,7 @@ def test_the_cache_still_names_subprojects(tmp_path: Path):
     roots, so narrowing `_is_ninja_tree` must not have removed that use.
     """
     import inspect
-    from protocolize.onboard import extract
+    from alcorpora.onboard import extract
     src = inspect.getsource(extract)
     assert 'CMAKECache' in src or 'CMakeCache.txt' in src, (
         'the cache must still be read somewhere')

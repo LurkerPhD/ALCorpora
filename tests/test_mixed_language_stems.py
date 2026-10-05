@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import json
 
-from protocolize.flat_cmake import flat_cmake, select
-from protocolize.private_protocol import CompileEntry, Protocol
+from alcorpora.flat_cmake import flat_cmake, select
+from alcorpora.private_protocol import CompileEntry, Protocol
 
 
 def _mixed() -> Protocol:

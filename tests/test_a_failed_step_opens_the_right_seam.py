@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 import admit
-from protocolize.agent import SeamFailed
+from alcorpora.agent import SeamFailed
 
 
 class _FakeAgent:
@@ -34,7 +34,7 @@ class _FakeAgent:
 
     def ask(self, seam, prompt, cwd, *, signature=''):
         self.calls += 1
-        from protocolize import seams
+        from alcorpora import seams
         text = json.dumps(self.payload)
         resp = seams.parse(text)
         bad = seams.problems(resp)

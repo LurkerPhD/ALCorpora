@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.onboard.extract import extract_and_prove
-from protocolize.private_protocol import TREE, expand_tree
+from alcorpora.onboard.extract import extract_and_prove
+from alcorpora.private_protocol import TREE, expand_tree
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which('cmake') and shutil.which('ninja')),

@@ -21,7 +21,7 @@
   fixture**。判定标准是**名字有没有进逻辑**，不是计数：
 
   ```bash
-  grep -riE 'nastran|mystran|lapack|deepf2c' protocolize/ skills/ tests/
+  grep -riE 'nastran|mystran|lapack|deepf2c' alcorpora/ skills/ tests/
   # 当前：184 处命中 / 24 个文件。逐 AST 节点核对后全部落在 docstring 与测试 fixture 内，
   # 代码逻辑里 0 处。改动后要维持这个状态。
   ```
@@ -35,7 +35,7 @@
   **严格白名单 + 全有或全无** —— 条目上多一个 `stem` 就会**整份拒载**。合法 cc 是
   **导出物**(`to_cc`,剥掉 cc 未定义的字段),不是磁盘上的形状。
   **除非跑过真消费者,不要声称任何东西是合法 cc。**
-- **改 `protocolize/` 前先跑测试，改完立刻验证。**
+- **改 `alcorpora/` 前先跑测试，改完立刻验证。**
 
 ## 四、这个流程的能力，靠什么测
 

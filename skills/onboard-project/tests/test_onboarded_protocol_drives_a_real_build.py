@@ -36,8 +36,8 @@ import subprocess
 
 import pytest
 
-from protocolize.onboard.extract import extract_and_prove
-from protocolize.private_protocol import TREE
+from alcorpora.onboard.extract import extract_and_prove
+from alcorpora.private_protocol import TREE
 from test_onboard_extracts_a_protocol_from_a_build import (_configure,
                                                           _make_corpus)
 

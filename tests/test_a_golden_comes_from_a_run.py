@@ -32,7 +32,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 
-from protocolize.verification_plan import VerificationPlan  # noqa: E402
+from alcorpora.verification_plan import VerificationPlan  # noqa: E402
 
 
 def _plan() -> dict:

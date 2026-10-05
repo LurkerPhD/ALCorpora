@@ -35,8 +35,8 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.flat_cmake import flat_cmake
-from protocolize.private_protocol import TREE, CompileEntry, Product, Protocol
+from alcorpora.flat_cmake import flat_cmake
+from alcorpora.private_protocol import TREE, CompileEntry, Product, Protocol
 
 pytestmark = pytest.mark.skipif(
     not Path('/bin/sh').exists(), reason='needs a POSIX shell')

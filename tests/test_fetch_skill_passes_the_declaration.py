@@ -105,11 +105,11 @@ def test_the_projects_declaration_reaches_the_capture(tmp_path: Path):
     fetch.BENCH_CSV = csv
     fetch.native = lambda s, a: (True, '', [])
 
-    with mock.patch('protocolize.onboard.extract.extract_and_prove',
+    with mock.patch('alcorpora.onboard.extract.extract_and_prove',
                     return_value=(_Proto(), mock.Mock(compared=0))), \
-            mock.patch('protocolize.onboard.extract.capture_verification',
+            mock.patch('alcorpora.onboard.extract.capture_verification',
                        side_effect=fake_capture), \
-            mock.patch('protocolize.verify.cli.main', return_value=0):
+            mock.patch('alcorpora.verify.cli.main', return_value=0):
         rc = admit.main([str(dest), '--readmit', '--agent-cmd', 'false',
                          '--declaration', 'rules.json'],
                         namespace=fetch.__dict__)

@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from protocolize import agent as agent_mod
-from protocolize import seams
+from alcorpora import agent as agent_mod
+from alcorpora import seams
 
 
 def _fake(tmp_path: Path, body: str) -> str:

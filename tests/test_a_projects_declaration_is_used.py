@@ -73,7 +73,7 @@ _PROTO = None
 def _proto():
     global _PROTO
     if _PROTO is None:
-        from protocolize.private_protocol import Product, Protocol
+        from alcorpora.private_protocol import Product, Protocol
         _PROTO = Protocol(
             compilation=[], generated_inputs=[],
             products=[Product(output='${TREE}/bin/prog', kind='exe',
@@ -98,7 +98,7 @@ def test_the_declared_field_model_changes_the_assertion(tmp_path: Path):
     are physical becomes a `text_lockstep` that compares whole lines. The
     plan still passes — which is the problem.
     """
-    from protocolize.onboard.extract import capture_verification
+    from alcorpora.onboard.extract import capture_verification
 
     proj = _case_list_project(tmp_path)
     tree = tmp_path / 'build'

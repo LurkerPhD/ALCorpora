@@ -34,7 +34,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from protocolize.private_protocol import TREE, CompileEntry, Product, Protocol
+from alcorpora.private_protocol import TREE, CompileEntry, Product, Protocol
 
 from .extract import ExtractionError, Toolchain, _absolutise_paths
 

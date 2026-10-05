@@ -32,7 +32,7 @@ def test_there_is_a_skill_to_check():
 def test_every_python_invocation_is_bench_py(skill: Path):
     """`python3` in a skill must mean `bench.py`, never a module or a snippet.
 
-    A `python3 -c "from protocolize… import …"` block is the exact shape this
+    A `python3 -c "from alcorpora… import …"` block is the exact shape this
     guards: it looks helpful and it makes the reader responsible for
     reproducing the call correctly, forever.
     """

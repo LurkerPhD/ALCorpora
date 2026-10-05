@@ -18,8 +18,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from protocolize.verification_plan import VerificationPlan
-from protocolize.verification_plan import Golden, Run, Target
+from alcorpora.verification_plan import VerificationPlan
+from alcorpora.verification_plan import Golden, Run, Target
 
 _REPO = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO / 'skills/fetch-benchmark-project/scripts/fetch.py'

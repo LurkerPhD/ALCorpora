@@ -21,8 +21,8 @@ than decorative.
 
 from __future__ import annotations
 
-from protocolize.verification_plan import VerificationPlan
-from protocolize.verify.suite import check_self_reports
+from alcorpora.verification_plan import VerificationPlan
+from alcorpora.verify.suite import check_self_reports
 
 #: The corpus's own shape: a heading the section_pattern matches, and the
 #: total row the assertion reads.
@@ -89,7 +89,7 @@ def test_the_evidence_reaches_the_runs_output():
     read nothing — and this is the kind whose whole verdict comes from a
     number the PROJECT printed about itself.
     """
-    from protocolize.verify import suite
+    from alcorpora.verify import suite
 
     plan = _plan()
     stdout = _TABLE.replace('{num}', '0')

@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from protocolize.onboard.extract import capture_verification
-from protocolize.private_protocol import Product, Protocol
+from alcorpora.onboard.extract import capture_verification
+from alcorpora.private_protocol import Product, Protocol
 
 # ── the three declaration shapes, as fixtures ─────────────────
 
@@ -259,7 +259,7 @@ def test_a_directory_the_rule_cannot_explain_is_not_a_case(tmp_path):
 def test_every_captured_plan_is_EXECUTABLE(tmp_path, shape):
     """A captured plan goes straight to the runner, so it must be complete —
     and `problems()` is what decides that, not a hope."""
-    from protocolize.verification_plan import VerificationPlan
+    from alcorpora.verification_plan import VerificationPlan
     tree = _tree(tmp_path)
     if shape == 'registered':
         proto, proj = _proto(tests=[{'name': 't', 'command': ['x']}]), None
@@ -530,7 +530,7 @@ def test_the_generic_module_names_no_corpus(tmp_path):
     """
     import ast
     from pathlib import Path as _P
-    import protocolize.onboard.extract as _extract
+    import alcorpora.onboard.extract as _extract
     # Located through the module, not by counting directory levels: this file
     # now lives beside the skill it tests, and a parents[N] anchor would have
     # to change with it.

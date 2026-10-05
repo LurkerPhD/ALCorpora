@@ -34,7 +34,7 @@ import json
 
 import pytest
 
-from protocolize.private_protocol import (CompileEntry, Product, Protocol)
+from alcorpora.private_protocol import (CompileEntry, Product, Protocol)
 
 _CC_KEYS = {'directory', 'file', 'command', 'arguments'}
 

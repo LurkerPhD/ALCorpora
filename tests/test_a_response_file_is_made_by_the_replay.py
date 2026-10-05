@@ -28,8 +28,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from protocolize.flat_cmake import flat_cmake
-from protocolize.private_protocol import (TREE, CompileEntry, Product,
+from alcorpora.flat_cmake import flat_cmake
+from alcorpora.private_protocol import (TREE, CompileEntry, Product,
                                           Protocol)
 
 _RSP = 'CMakeFiles/lapack.rsp'
@@ -107,7 +107,7 @@ def test_the_at_operand_is_rerooted_not_treated_as_a_path(tmp_path: Path):
     then, being under the tree but not "produced", it is spelled ABSOLUTE
     and points at the capture tree as well.
     """
-    from protocolize.onboard.extract import Toolchain
+    from alcorpora.onboard.extract import Toolchain
 
     root = tmp_path / 'proj'
     (root / 'build').mkdir(parents=True)

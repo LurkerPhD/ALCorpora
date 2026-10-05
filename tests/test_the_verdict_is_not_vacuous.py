@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from protocolize.verification_plan import (Golden, Run, Target,
+from alcorpora.verification_plan import (Golden, Run, Target,
                                            VerificationPlan)
-from protocolize.verify.suite import Case, _parse_suite
+from alcorpora.verify.suite import Case, _parse_suite
 
 
 def _plan() -> VerificationPlan:

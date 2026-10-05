@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from protocolize.onboard.extract import (_artifact_spelling,
+from alcorpora.onboard.extract import (_artifact_spelling,
                                          _golden_spelling,
                                          _observed_output_suffix)
 

@@ -42,7 +42,7 @@ REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from protocolize.onboard.extract import (  # noqa: E402
+from alcorpora.onboard.extract import (  # noqa: E402
     ExtractionError, capture_verification, extract_protocol,
 )
 
@@ -273,7 +273,7 @@ def _capture_and_prove_plan(proto, build: Path, root: Path, args) -> int:
       not judge the corpus.  When the reference is not runnable the run is
       reported as NOT DONE, never as passed.
     """
-    from protocolize.verification_plan import VerificationPlan
+    from alcorpora.verification_plan import VerificationPlan
 
     try:
         data = capture_verification(proto, build, root,
@@ -318,7 +318,7 @@ def _run_plan_against_reference(plan_path: Path) -> int:
     below where onboarding wrote it — the plan was correct and the verdict
     was ``no verification_plan.json``.
     """
-    from protocolize.verify import cli
+    from alcorpora.verify import cli
 
     tree = plan_path.parent
     print(f'self-verifying the plan on the reference ({tree}) ...')

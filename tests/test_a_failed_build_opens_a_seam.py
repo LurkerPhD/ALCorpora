@@ -38,13 +38,13 @@ class _FakeAgent:
     def ask(self, seam, prompt, cwd, *, signature=''):
         self.calls += 1
         self.asked.append(seam)
-        from protocolize import seams
+        from alcorpora import seams
         text = (self.payload if isinstance(self.payload, str)
                 else json.dumps(self.payload))
         resp = seams.parse(text)
         bad = seams.problems(resp)
         if bad:
-            from protocolize.agent import SeamFailed
+            from alcorpora.agent import SeamFailed
             raise SeamFailed('; '.join(bad), raw=text)
         return resp
 
@@ -248,7 +248,7 @@ def test_a_wrong_tree_subdir_is_asked_again(tmp_path: Path):
         log_dir = None
 
         def ask(self, seam, prompt, cwd, *, signature=''):
-            from protocolize import seams
+            from alcorpora import seams
             import json as _j
             payload = answers[min(self.calls, len(answers) - 1)]
             self.calls += 1

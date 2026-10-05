@@ -10,7 +10,7 @@ Replaces, for all three corpora at once:
 It knows nothing about any corpus.  Everything specific arrives in the plan:
 which product is under test, where the cases come from, what to run, what the
 run must leave behind, what to compare it against, and what must have
-happened for the run to count.  See :mod:`protocolize.verification_plan`.
+happened for the run to count.  See :mod:`alcorpora.verification_plan`.
 
 THE ONE RULE THAT UNIFIES THE ORIGIN.  A corpus either has an external truth
 (a golden — for the golden-file corpora the only truth available is the
@@ -48,7 +48,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from protocolize.private_protocol import expand_tree
+from alcorpora.private_protocol import expand_tree
 
 from . import compare
 

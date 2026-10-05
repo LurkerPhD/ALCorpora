@@ -4,13 +4,13 @@ A project is described by its verification protocol, so there is ONE command
 and it takes the build tree holding that plan:
 
     # the whole plan
-    python3 -m protocolize.verify.cli <build tree>
+    python3 -m alcorpora.verify.cli <build tree>
 
     # one case, and whatever it restarts from
-    python3 -m protocolize.verify.cli <build tree> --case <id>
+    python3 -m alcorpora.verify.cli <build tree> --case <id>
 
     # what the plan would discover and run, without running it
-    python3 -m protocolize.verify.cli <build tree> --list
+    python3 -m alcorpora.verify.cli <build tree> --list
 
 Exit status is the plan's verdict: 0 when the plan's own summary is met, 1
 otherwise, 2 when something crashed.  A caller can branch on it.
@@ -46,7 +46,7 @@ def _plan_and_env(build_dir: Path, origin: Path | None,
                   exe: Path | None = None,
                   protocol: Path | None = None,
                   tree: Path | None = None):
-    from protocolize.verification_plan import VerificationPlan
+    from alcorpora.verification_plan import VerificationPlan
     plan = VerificationPlan.load(build_dir / PLAN_NAME)
     # WHERE the protocol is, and where the run's roots are, are the PLAN's to
     # declare (with the CLI able to override), never a name baked in here: a

@@ -1,7 +1,7 @@
 """A comparison failure is MEASURED before an agent is asked.
 
 The lines that differ between two runs of one binary ARE the volatile lines,
-and that is a deterministic measurement, not a judgement — `protocolize
+and that is a deterministic measurement, not a judgement — `alcorpora
 .volatiles` has owned it all along and nothing in the admission flow called
 it.  So a `B-project` failure now measures first (two runs, the second under
 a shifted TZ), turns each moved shape into a `drop` rule, and asks the seam
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from protocolize import volatiles
+from alcorpora import volatiles
 
 
 def test_a_measured_shape_becomes_a_rule_that_matches_the_real_lines():

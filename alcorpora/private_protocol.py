@@ -54,7 +54,7 @@ from typing import Sequence
 #: ``src.tree_anchor``: layer 1 (the transpiler's compile-database reader)
 #: needs them without a protocol, so they are defined down there and
 #: re-exported here for this module's consumers.
-from protocolize.tree_anchor import (TREE, ProtocolError, capture_tree,  # noqa: F401
+from alcorpora.tree_anchor import (TREE, ProtocolError, capture_tree,  # noqa: F401
                              check_tree_invariant, escape_tree, expand_tree)
 
 #: The one protocol version this code reads.  A file from another version is

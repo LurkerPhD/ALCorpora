@@ -17,7 +17,7 @@ import json
 
 import pytest
 
-from protocolize import seams
+from alcorpora import seams
 
 
 def _answer(**payload) -> str:
