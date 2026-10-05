@@ -2,11 +2,14 @@
 
 > 中文版 / Chinese: [README.zh-CN.md](README.zh-CN.md)
 
-**ALCorpora is the corpus layer under ALForce** — ALForce is the transpiler;
-this repo does the one job ALForce cannot do for itself. It takes a **real
-project**, proves it builds with its own toolchain, and proves that project's
-own verification is green — so ALForce is developed and judged against a
-corpus that already passes, not against hand-made samples.
+**ALCorpora replaces ALForce's L3 — the project-driving layer.** It uses an
+agent's generalization to normalize a **legal corpus project** into protocols:
+a build protocol that replays the project, and a verification protocol that
+says when a run of it was right. ALForce consumes those protocols to drive its
+own iterative development. ALForce is the transpiler; this repo does the half
+ALForce cannot do for itself — take a **real project**, prove it builds with
+its own toolchain and verifies green — so ALForce is developed against a corpus
+that already passes. *(The two repos are not wired together yet.)*
 
 Turn **any project** into two artifacts, each **self-verified at the exit**:
 
